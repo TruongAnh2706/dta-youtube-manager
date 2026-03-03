@@ -7,7 +7,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.error("Missing Supabase environment variables. Please check .env.local");
 }
 
-export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
+export const supabase = createClient(
+    supabaseUrl || 'https://placeholder.supabase.co',
+    supabaseAnonKey || 'public-anon-key'
+);
 
 // Helpers: Chuyển đổi qua lại giữa Snake_case (PostgreSQL Database) và camelCase (React TypeScript)
 export function toCamelCase(obj: any): any {
