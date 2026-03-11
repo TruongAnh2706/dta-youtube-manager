@@ -1,18 +1,20 @@
 import React, { useState, useMemo } from 'react';
-import { Topic, DEFAULT_NICHES } from '../types';
 import { Plus, Search, Layers } from 'lucide-react';
 import { TopicCard } from './topics/TopicCard';
 import { TopicModal } from './topics/TopicModal';
 import { TopicFilters } from './topics/TopicFilters';
+import { Topic, Staff, DEFAULT_NICHES } from '../types';
+import { supabase } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 
 interface TopicsProps {
   topics: Topic[];
   setTopics: React.Dispatch<React.SetStateAction<Topic[]>>;
+  staffList: Staff[];
 }
 
-export function Topics({ topics = [], setTopics }: TopicsProps) {
+export function Topics({ topics = [], setTopics, staffList }: TopicsProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -69,10 +71,16 @@ export function Topics({ topics = [], setTopics }: TopicsProps) {
     setEditingTopic(null);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa chủ đề này?')) {
       setTopics(topics.filter(t => t.id !== id));
-      showToast('Đã xóa chủ đề.', 'info');
+      
+      const { error } = await supabase.from('topics').delete().eq('id', id);
+      if (error) {
+        showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
+      } else {
+        showToast('Đã xóa chủ đề.', 'info');
+      }
     }
   };
 
@@ -128,6 +136,7 @@ export function Topics({ topics = [], setTopics }: TopicsProps) {
                   onDelete={handleDelete}
                   isExpanded={expandedTopicId === topic.id}
                   onToggleExpand={() => setExpandedTopicId(expandedTopicId === topic.id ? null : topic.id)}
+                  staffList={staffList}
                 />
               ))}
             </div>
@@ -150,6 +159,7 @@ export function Topics({ topics = [], setTopics }: TopicsProps) {
         onClose={() => setIsModalOpen(false)}
         onSubmit={handleModalSubmit}
         editingTopic={editingTopic}
+        staffList={staffList}
       />
     </div>
   );

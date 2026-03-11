@@ -131,8 +131,8 @@ CREATE TABLE IF NOT EXISTS competitors (
 CREATE TABLE IF NOT EXISTS video_tasks (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  channel_id TEXT REFERENCES channels(id) ON DELETE CASCADE,
-  status TEXT NOT NULL CHECK (status IN ('idea', 'script', 'voiceover', 'editing', 'review', 'published')),
+  channel_id TEXT,
+  status TEXT NOT NULL CHECK (status IN ('pending', 'in_progress', 'completed', 'idea', 'script', 'voiceover', 'editing', 'review', 'published')),
   assignee_ids TEXT[] DEFAULT '{}',
   due_date TEXT,
   publish_time TEXT,

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Staff, Channel, StaffRole, StaffSkill, VideoTask } from '../types';
 import { Plus, Edit2, Trash2, X, UserCircle, Mail, Phone, Circle, Award, CheckSquare, DollarSign, Calculator, ShieldAlert, RefreshCw, Calendar, Clock, BarChart3 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { supabase } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
@@ -121,10 +122,16 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
     handleCloseModal();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa nhân sự này?')) {
       setStaffList(prev => prev.filter(s => s.id !== id));
-      showToast('Đã xóa nhân sự.', 'info');
+      
+      const { error } = await supabase.from('staff_list').delete().eq('id', id);
+      if (error) {
+        showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
+      } else {
+        showToast('Đã xóa nhân sự.', 'info');
+      }
     }
   };
 
@@ -400,17 +407,7 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
                     <ShieldAlert size={10} className="mr-1 opacity-50" /> Không có quyền xem lương
                   </div>
                 )}
-                <div className="pt-2">
-                  <span className="font-medium text-gray-700 block mb-1">Kỹ năng:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {staff.skills?.map(skill => (
-                      <span key={skill} className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                        {SKILLS.find(s => s.id === skill)?.label}
-                      </span>
-                    ))}
-                    {(!staff.skills || staff.skills.length === 0) && <span className="text-xs text-gray-400 italic">Chưa cập nhật</span>}
-                  </div>
-                </div>
+
               </div>
 
               <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
@@ -573,23 +570,7 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Kỹ năng chuyên môn</label>
-                  <div className="flex flex-wrap gap-2">
-                    {SKILLS.map(skill => (
-                      <button
-                        key={skill.id} type="button"
-                        onClick={() => toggleSkill(skill.id)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${(formData.skills || []).includes(skill.id)
-                          ? 'bg-blue-50 border-blue-200 text-blue-700'
-                          : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'
-                          }`}
-                      >
-                        {skill.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Phân công kênh quản lý/sản xuất</label>

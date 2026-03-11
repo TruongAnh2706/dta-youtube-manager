@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import ReactMarkdown from 'react-markdown';
+import { supabase } from '../lib/supabase';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Cell, PieChart, Pie, Legend, LineChart, Line, AreaChart, Area
@@ -202,9 +203,28 @@ export function FinanceManager({
     setIsModalOpen(false);
   };
 
-  const handleDeleteAccount = (id: string) => {
+  const handleDeleteAccount = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa tài khoản này?')) {
       setAccounts(prev => prev.filter(a => a.id !== id));
+      const { error } = await supabase.from('financial_accounts').delete().eq('id', id);
+      if (error) showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
+      else showToast('Đã xóa tài khoản.', 'info');
+    }
+  };
+  
+  const handleDeleteTransaction = async (id: string) => {
+    if (confirm('Bạn có chắc chắn muốn xóa giao dịch này?')) {
+      setTransactions(prev => prev.filter(x => x.id !== id));
+      const { error } = await supabase.from('transactions').delete().eq('id', id);
+      if (error) showToast(`Lỗi xóa: ${error.message}`, 'error');
+    }
+  };
+  
+  const handleDeleteRecord = async (id: string) => {
+    if (confirm('Bạn có chắc chắn muốn xóa báo cáo này?')) {
+      setFinancials(prev => prev.filter(f => f.id !== id));
+      const { error } = await supabase.from('financial_records').delete().eq('id', id);
+      if (error) showToast(`Lỗi xóa: ${error.message}`, 'error');
     }
   };
 
@@ -551,7 +571,7 @@ export function FinanceManager({
                               <button onClick={() => handleOpenTransModal(t)} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={14} /></button>
                             )}
                             {hasPermission('finance_edit') && (
-                              <button onClick={() => setTransactions(prev => prev.filter(x => x.id !== t.id))} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
+                              <button onClick={() => handleDeleteTransaction(t.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
                             )}
                           </div>
                         </td>
@@ -674,7 +694,7 @@ export function FinanceManager({
                                 <button onClick={() => handleOpenRecordModal(record)} className="p-1 text-gray-400 hover:text-emerald-600"><Edit2 size={16} /></button>
                               )}
                               {hasPermission('finance_edit') && (
-                                <button onClick={() => setFinancials(prev => prev.filter(f => f.id !== record.id))} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                                <button onClick={() => handleDeleteRecord(record.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
                               )}
                             </div>
                           </td>

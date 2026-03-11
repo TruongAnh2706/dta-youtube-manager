@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Channel, Topic, SourceChannel, Competitor, Staff } from '../types';
+import { Channel, Topic, SourceChannel, Competitor, Staff, VideoTask } from '../types';
 import { Crosshair, Link as LinkIcon, Users, Hash, Search, Plus, Trash2, ExternalLink, RefreshCw, BarChart3, Clock, AlertCircle } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { SourceChannels } from './SourceChannels';
@@ -18,6 +18,8 @@ interface SpyManagerProps {
     rotateYoutubeKey: () => boolean;
     staffList: Staff[];
     currentUser: { id: string; name: string; role: string } | null;
+    tasks: VideoTask[];
+    setTasks: React.Dispatch<React.SetStateAction<VideoTask[]>>;
 }
 
 export function SpyManager({
@@ -25,7 +27,7 @@ export function SpyManager({
     competitors, setCompetitors,
     topics, setTopics,
     channels, youtubeApiKey, geminiApiKey, rotateYoutubeKey,
-    staffList, currentUser
+    staffList, currentUser, tasks, setTasks
 }: SpyManagerProps) {
     const [activeTab, setActiveTab] = useState<'sources' | 'competitors'>('sources');
 
@@ -77,6 +79,8 @@ export function SpyManager({
                         rotateYoutubeKey={rotateYoutubeKey}
                         staffList={staffList}
                         currentUser={currentUser}
+                        tasks={tasks}
+                        setTasks={setTasks}
                     />
                 ) : (
                     <CompetitorSpy

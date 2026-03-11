@@ -45,7 +45,7 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
   // Email Modal State
   const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState<ManagedEmail | null>(null);
-  const [emailForm, setEmailForm] = useState<Omit<ManagedEmail, 'id'>>({ channelCode: '', email: '', password: '', recoveryEmail: '', twoFactorAuth: '', verificationPhone: '', assignedTo: '', notes: '' });
+  const [emailForm, setEmailForm] = useState<Omit<ManagedEmail, 'id'>>({ channelCode: '', email: '', password: '', recoveryEmail: '', twoFactorAuth: '', verificationPhone: '', assignedTo: '', status: 'new', notes: '' });
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -273,7 +273,7 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-lg font-semibold text-gray-800 flex items-center"><Mail className="mr-2" size={20} /> Kho Email</h2>
-            <button onClick={() => { setEditingEmail(null); setEmailForm({ channelCode: '', email: '', password: '', recoveryEmail: '', twoFactorAuth: '', verificationPhone: '', assignedTo: '', notes: '' }); setIsEmailModalOpen(true); }} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
+            <button onClick={() => { setEditingEmail(null); setEmailForm({ channelCode: '', email: '', password: '', recoveryEmail: '', twoFactorAuth: '', verificationPhone: '', assignedTo: '', status: 'new', notes: '' }); setIsEmailModalOpen(true); }} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
               <Plus size={16} className="mr-2" /> Thêm Email mới
             </button>
           </div>

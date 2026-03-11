@@ -32,7 +32,7 @@ export function Login({ onLogin }: LoginProps) {
       const { data, error: dbError } = await supabase
         .from('staff_list')
         .select('*')
-        .eq('username', trimmedUsername)
+        .ilike('username', trimmedUsername)
         .eq('password', trimmedPassword)
         .single();
 
@@ -57,9 +57,7 @@ export function Login({ onLogin }: LoginProps) {
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
-          <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center">
-            <Youtube className="text-red-600" size={40} />
-          </div>
+          <img src="/Logo.png" alt="DTA Studio Logo" className="w-20 h-20 object-contain drop-shadow-[0_0_12px_rgba(255,0,0,0.4)]" />
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
           DTA Studio

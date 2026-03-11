@@ -12,6 +12,7 @@ export type Topic = {
   monetizationPotential?: 'low' | 'medium' | 'high';
   competitionLevel?: 'low' | 'medium' | 'high';
   niche?: string; // Tên thị trường ngách lớn
+  assignees?: string[]; // Danh sách ID các nhân sự được giao quản lý chủ đề này
 };
 
 export const DEFAULT_NICHES = [
@@ -99,6 +100,7 @@ export type PermissionKey =
   | 'copyright_view' | 'copyright_edit'
   | 'assets_view' | 'assets_edit'
   | 'tasks_view' | 'tasks_edit' | 'tasks_claim'
+  | 'emails_view' | 'emails_edit'
   | 'settings_view' | 'settings_edit_keys' | 'settings_edit_permissions';
 
 export type RolePermissions = Record<StaffRole, PermissionKey[]>;
@@ -124,7 +126,7 @@ export type Staff = {
   };
 };
 
-export type TaskStatus = 'idea' | 'script' | 'voiceover' | 'editing' | 'review' | 'published';
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'idea' | 'script' | 'voiceover' | 'editing' | 'review' | 'published';
 
 export type VideoTask = {
   id: string;
@@ -271,9 +273,11 @@ export type ManagedEmail = {
   recoveryEmail?: string;
   twoFactorAuth?: string;
   verificationPhone?: string;
-  assignedTo?: string;
+  assignedTo?: string | null; // staff ID
+  status: 'new' | 'aging' | 'creating' | 'active' | 'error';
   notes?: string;
   createdAt?: string;
+  targetTopicIds?: string[]; // (Optional) Gán sẵn định hướng kênh sẽ làm chủ đề gì
 };
 
 export interface Competitor {
@@ -286,6 +290,7 @@ export interface Competitor {
   lastVideoDate?: string;
   notes?: string;
   topicIds: string[];
+  allowedStaffIds?: string[];
 }
 
 export type ApiKey = {

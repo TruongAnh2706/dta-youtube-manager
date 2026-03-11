@@ -14,6 +14,7 @@ import {
 import { vi } from 'date-fns/locale';
 import { GoogleGenAI } from '@google/genai';
 import ReactMarkdown from 'react-markdown';
+import { supabase } from '../lib/supabase';
 import { generateScriptOutline } from '../services/aiService';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
@@ -130,26 +131,32 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingTask) {
-      setTasks(tasks.map(t => t.id === editingTask.id ? { ...t, ...formData } : t));
+      setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...formData } : t));
       showToast('Đã cập nhật lịch đăng video thành công!', 'success');
     } else {
-      setTasks([...tasks, { id: Date.now().toString(), ...formData }]);
+      setTasks(prev => [...prev, { id: Date.now().toString(), ...formData }]);
       showToast('Đã lên lịch đăng video mới thành công!', 'success');
     }
     setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa lịch đăng này?')) {
       setTasks(prev => prev.filter(t => t.id !== id));
-      showToast('Đã xóa lịch đăng video.', 'info');
+      
+      const { error } = await supabase.from('video_tasks').delete().eq('id', id);
+      if (error) {
+        showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
+      } else {
+        showToast('Đã xóa lịch đăng video.', 'info');
+      }
       setIsModalOpen(false);
     }
   };
 
   const toggleStatus = (task: VideoTask) => {
     const newStatus: TaskStatus = task.status === 'published' ? 'review' : 'published';
-    setTasks(tasks.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
   };
 
   const handleSmartSchedule = async () => {

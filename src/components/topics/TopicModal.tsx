@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Topic, DEFAULT_NICHES } from '../../types';
-import { X, Layers, Info, Globe, Tag, Plus, Target } from 'lucide-react';
+import { Topic, DEFAULT_NICHES, Staff } from '../../types';
+import { X, Layers, Info, Globe, Tag, Plus, Target, Users } from 'lucide-react';
 
 interface TopicModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (topic: Omit<Topic, 'id'>) => void;
   editingTopic: Topic | null;
+  staffList: Staff[];
 }
 
-export function TopicModal({ isOpen, onClose, onSubmit, editingTopic }: TopicModalProps) {
+export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList }: TopicModalProps) {
   const [formData, setFormData] = useState<Omit<Topic, 'id'>>({
     name: '',
     description: '',
@@ -22,7 +23,8 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic }: TopicMod
     difficultyLevel: 'medium',
     monetizationPotential: 'medium',
     competitionLevel: 'medium',
-    niche: ''
+    niche: '',
+    assignees: []
   });
 
   const [tagInput, setTagInput] = useState('');
@@ -42,7 +44,8 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic }: TopicMod
         difficultyLevel: editingTopic.difficultyLevel || 'medium',
         monetizationPotential: editingTopic.monetizationPotential || 'medium',
         competitionLevel: editingTopic.competitionLevel || 'medium',
-        niche: editingTopic.niche || ''
+        niche: editingTopic.niche || '',
+        assignees: editingTopic.assignees || []
       });
     } else {
       setFormData({
@@ -57,7 +60,8 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic }: TopicMod
         difficultyLevel: 'medium',
         monetizationPotential: 'medium',
         competitionLevel: 'medium',
-        niche: ''
+        niche: '',
+        assignees: []
       });
     }
   }, [editingTopic, isOpen]);
@@ -312,6 +316,39 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic }: TopicMod
                 rows={4}
                 placeholder="Kế hoạch phát triển nội dung, phong cách video, tần suất đăng..."
               />
+            </div>
+            
+            {/* Phân công nhân sự */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Phân công Nhân sự phụ trách (Assignees)</label>
+              <div className="bg-gray-50/50 border border-gray-200 rounded-xl p-4 max-h-[160px] overflow-y-auto">
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                  {staffList.map((staff) => (
+                    <label key={staff.id} className="flex items-center space-x-3 bg-white p-2 rounded-lg border border-gray-100 cursor-pointer hover:border-blue-300 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={(formData.assignees || []).includes(staff.id)}
+                        onChange={(e) => {
+                          const newAssignees = e.target.checked
+                            ? [...(formData.assignees || []), staff.id]
+                            : (formData.assignees || []).filter(id => id !== staff.id);
+                          setFormData({ ...formData, assignees: newAssignees });
+                        }}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-gray-700">{staff.name}</span>
+                        <span className="text-[10px] text-gray-400 capitalize">{staff.role}</span>
+                      </div>
+                    </label>
+                  ))}
+                  {staffList.length === 0 && (
+                    <div className="col-span-full text-sm text-gray-500 text-center py-2">
+                      Hiện chưa có nhân sự nào trong hệ thống.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
         </form>

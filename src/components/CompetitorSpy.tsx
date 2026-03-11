@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Competitor, Topic } from '../types';
+import { Competitor, Topic, Staff } from '../types';
 import { Plus, Edit2, Trash2, X, Search, ExternalLink, TrendingUp, Users, PlayCircle, RefreshCw, AlertCircle, Sparkles, BrainCircuit, ChevronDown, ChevronUp, BarChart3, MessageSquare, Lightbulb } from 'lucide-react';
 import { fetchYoutubeChannelInfo } from '../services/youtube';
 import { GoogleGenAI } from '@google/genai';
@@ -14,9 +14,11 @@ interface CompetitorSpyProps {
   geminiApiKey: string;
   rotateYoutubeKey: () => boolean;
   topics: Topic[];
+  staffList?: Staff[];
+  currentUser?: { role: string; name: string; id: string } | null;
 }
 
-export function CompetitorSpy({ competitors, setCompetitors, youtubeApiKey, geminiApiKey, rotateYoutubeKey, topics }: CompetitorSpyProps) {
+export function CompetitorSpy({ competitors, setCompetitors, youtubeApiKey, geminiApiKey, rotateYoutubeKey, topics, staffList = [], currentUser }: CompetitorSpyProps) {
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCompetitor, setEditingCompetitor] = useState<Competitor | null>(null);
@@ -31,8 +33,11 @@ export function CompetitorSpy({ competitors, setCompetitors, youtubeApiKey, gemi
     subscriberCount: '0',
     videoCount: '0',
     notes: '',
-    topicIds: []
+    topicIds: [],
+    allowedStaffIds: []
   });
+
+  const isFullAccess = currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
   const handleOpenModal = (competitor?: Competitor) => {
     if (competitor) {
@@ -43,11 +48,12 @@ export function CompetitorSpy({ competitors, setCompetitors, youtubeApiKey, gemi
         subscriberCount: competitor.subscriberCount,
         videoCount: competitor.videoCount,
         notes: competitor.notes || '',
-        topicIds: competitor.topicIds || []
+        topicIds: competitor.topicIds || [],
+        allowedStaffIds: competitor.allowedStaffIds || []
       });
     } else {
       setEditingCompetitor(null);
-      setFormData({ name: '', url: '', subscriberCount: '0', videoCount: '0', notes: '', topicIds: [] });
+      setFormData({ name: '', url: '', subscriberCount: '0', videoCount: '0', notes: '', topicIds: [], allowedStaffIds: [] });
     }
     setIsModalOpen(true);
   };
@@ -383,6 +389,39 @@ export function CompetitorSpy({ competitors, setCompetitors, youtubeApiKey, gemi
                   ))}
                 </div>
               </div>
+              
+              {isFullAccess && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Phân quyền Nhân sự theo dõi</label>
+                  <div className="flex flex-wrap gap-2">
+                    {staffList.map(staff => {
+                      const isAssigned = formData.allowedStaffIds?.includes(staff.id);
+                      return (
+                        <button
+                          key={staff.id}
+                          type="button"
+                          onClick={() => {
+                            const newStaffIds = isAssigned
+                              ? (formData.allowedStaffIds || []).filter(id => id !== staff.id)
+                              : [...(formData.allowedStaffIds || []), staff.id];
+                            setFormData({ ...formData, allowedStaffIds: newStaffIds });
+                          }}
+                          className={`px-3 py-1 rounded-lg border text-xs font-medium transition-all ${isAssigned
+                              ? 'bg-blue-50 border-blue-200 text-blue-700'
+                              : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300'
+                            }`}
+                        >
+                          <div className="flex items-center">
+                            <div className={`w-2 h-2 rounded-full mr-2 ${isAssigned ? 'bg-blue-500' : 'bg-gray-300'}`} />
+                            {staff.name}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-lg">Hủy</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">Lưu đối thủ</button></div>
             </form>
           </div>

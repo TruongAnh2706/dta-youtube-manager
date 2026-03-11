@@ -5,6 +5,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
 import ReactMarkdown from 'react-markdown';
+import { supabase } from '../lib/supabase';
 
 interface CopyrightManagerProps {
   strikes: Strike[];
@@ -96,8 +97,16 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
     setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
-    setStrikes(prev => prev.filter(s => s.id !== id));
+  const handleDelete = async (id: string) => {
+    if (confirm('Bạn có chắc chắn muốn xóa cảnh báo này?')) {
+      setStrikes(prev => prev.filter(s => s.id !== id));
+      const { error } = await supabase.from('strikes').delete().eq('id', id);
+      if (error) {
+        showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
+      } else {
+        showToast('Đã xóa cảnh báo.', 'info');
+      }
+    }
   };
 
   const calculateDaysLeft = (expirationDate: string) => {

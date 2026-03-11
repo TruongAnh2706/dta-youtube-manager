@@ -1,5 +1,5 @@
 import React from 'react';
-import { Topic } from '../../types';
+import { Topic, Staff } from '../../types';
 import { Edit2, Trash2, Globe, Target, BarChart3, ChevronUp, ChevronDown, Lightbulb, Tag, Hash } from 'lucide-react';
 import { usePermissions } from '../../hooks/usePermissions';
 
@@ -9,16 +9,20 @@ interface TopicCardProps {
   onDelete: (id: string) => void;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  staffList: Staff[];
 }
 
-export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand }: TopicCardProps) {
+export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand, staffList }: TopicCardProps) {
   const { hasPermission } = usePermissions();
   // Defensive checks for missing arrays
   const tags = topic.tags || [];
   const hashtags = topic.hashtags || [];
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
+    <div 
+      className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col transition-all hover:shadow-md"
+      style={{ borderTop: `4px solid ${topic.color}` }}
+    >
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
@@ -67,6 +71,23 @@ export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand 
             <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-[10px] font-medium">+{tags.length - 5}</span>
           )}
         </div>
+
+        {/* Start Assignees Section */}
+        {topic.assignees && topic.assignees.length > 0 && (
+          <div className="mb-4 flex items-center gap-1 flex-wrap">
+            <span className="text-[10px] uppercase font-bold text-gray-400 mr-1">Nhân sự:</span>
+            {topic.assignees.map(staffId => {
+              const staff = staffList.find(s => s.id === staffId);
+              if (!staff) return null;
+              return (
+                <div key={staff.id} className="w-6 h-6 rounded-full bg-blue-100 border border-blue-200 flex items-center justify-center text-[10px] font-bold text-blue-700 tooltip">
+                  {staff.name.charAt(0).toUpperCase()}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {/* End Assignees Section */}
 
         <button 
           onClick={onToggleExpand}

@@ -27,7 +27,8 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
         { key: 'assets', table: 'assets' },
         { key: 'proxies', table: 'proxies' },
         { key: 'licenses', table: 'licenses' },
-        { key: 'competitors', table: 'competitors' }
+        { key: 'competitors', table: 'competitors' },
+        { key: 'managedEmails', table: 'managed_emails' }
     ];
 
     // 1. NGHIỆP VỤ AUTO-SAVE (Đẩy lên DB)

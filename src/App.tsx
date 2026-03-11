@@ -8,6 +8,7 @@ import { Topic, Channel, SourceChannel, Staff, VideoTask, FinancialRecord, Strik
 import { Dashboard } from './components/Dashboard';
 import { Topics } from './components/Topics';
 import { Channels } from './components/Channels';
+import { EmailManager } from './components/EmailManager';
 import { StaffManager } from './components/Staff';
 import { SpyManager } from './components/SpyManager';
 import { NicheExplorer } from './components/NicheExplorer';
@@ -22,7 +23,7 @@ import { AutoSaveService } from './components/AutoSaveService';
 import { AdminSettings } from './components/AdminSettings';
 import { PermissionSettings } from './components/PermissionSettings';
 import { Login } from './components/Login';
-import { LayoutDashboard, Youtube, Hash, Menu, Link as LinkIcon, Users, LineChart, Calendar as CalendarIcon, DollarSign, ShieldAlert, HardDrive, Wrench, Sparkles, Eye, EyeOff, Bell, Crosshair, LogOut, Database, Settings, ShieldCheck, Briefcase, ChevronDown, ChevronRight, FolderOpen, Search, Compass } from 'lucide-react';
+import { LayoutDashboard, Youtube, Hash, Menu, Link as LinkIcon, Users, LineChart, Calendar as CalendarIcon, DollarSign, ShieldAlert, HardDrive, Wrench, Sparkles, Eye, EyeOff, Bell, Crosshair, LogOut, Database, Settings, ShieldCheck, Briefcase, Mail, ChevronDown, ChevronRight, FolderOpen, Search, Compass } from 'lucide-react';
 import { RolePermissions, PermissionKey, StaffRole } from './types';
 
 const DEFAULT_PERMISSIONS: RolePermissions = {
@@ -98,6 +99,47 @@ function AppContent() {
     );
   };
 
+  // Lọc dữ liệu theo phân quyền nhân sự - Phải đặt trên các early return
+  const isFullAccess = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const currentStaff = React.useMemo(() => {
+    return (staffList || []).find(s => s.name === currentUser?.name || s.id === currentUser?.id);
+  }, [staffList, currentUser]);
+
+  const viewableChannels = React.useMemo(() => {
+    if (isFullAccess) return channels || [];
+    return (channels || []).filter(c => currentStaff?.assignedChannelIds?.includes(c.id));
+  }, [channels, isFullAccess, currentStaff]);
+
+  const viewableSourceChannels = React.useMemo(() => {
+    if (isFullAccess) return sourceChannels || [];
+    return (sourceChannels || []).filter(c => c.allowedStaffIds?.includes(currentStaff?.id || ''));
+  }, [sourceChannels, isFullAccess, currentStaff]);
+
+  const viewableCompetitors = React.useMemo(() => {
+    if (isFullAccess) return competitors || [];
+    return (competitors || []).filter(c => c.allowedStaffIds?.includes(currentStaff?.id || ''));
+  }, [competitors, isFullAccess, currentStaff]);
+
+  const viewableTasks = React.useMemo(() => {
+    if (isFullAccess) return tasks || [];
+    return (tasks || []).filter(t => t.assigneeIds?.includes(currentStaff?.id || '') || t.isClaimable);
+  }, [tasks, isFullAccess, currentStaff]);
+
+  const viewableFinancials = React.useMemo(() => {
+    if (isFullAccess) return financials || [];
+    return (financials || []).filter(f => currentStaff?.assignedChannelIds?.includes(f.channelId));
+  }, [financials, isFullAccess, currentStaff]);
+
+  const viewableStrikes = React.useMemo(() => {
+    if (isFullAccess) return strikes || [];
+    return (strikes || []).filter(s => currentStaff?.assignedChannelIds?.includes(s.channelId));
+  }, [strikes, isFullAccess, currentStaff]);
+
+  const viewableEmails = React.useMemo(() => {
+    if (isFullAccess) return managedEmails || [];
+    return (managedEmails || []).filter(e => e.assignedTo === currentStaff?.id);
+  }, [managedEmails, isFullAccess, currentStaff]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
@@ -128,9 +170,10 @@ function AppContent() {
     },
     {
       id: 'channels',
-      label: 'Kênh & Nội Dung',
+      label: 'Kênh & Email',
       icon: Youtube,
       items: [
+        { id: 'emails', label: 'Quản lý Email thô', icon: Mail, permission: 'emails_view' },
         { id: 'channels', label: 'Mạng lưới Kênh', icon: Youtube, permission: 'channels_view' },
         { id: 'topics', label: 'Quản lý Chủ đề', icon: Hash, permission: 'topics_view' },
       ]
@@ -223,17 +266,23 @@ function AppContent() {
 
       {/* Sidebar */}
       <aside className={`
-        fixed lg:static inset-y-0 left-0 z-30
-        w-64 bg-[#1a1c23] text-gray-300 border-r border-gray-800
-        transform transition-transform duration-200 ease-in-out flex flex-col
+        fixed lg:sticky top-0 h-screen max-h-screen inset-y-0 left-0 z-30
+        w-[260px] bg-[#0d1117] text-gray-300 border-r border-[#1e232b]
+        transform transition-transform duration-300 ease-in-out flex flex-col
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        shadow-[4px_0_24px_rgba(0,0,0,0.5)] lg:shadow-none
       `}>
-        <div className="h-16 flex items-center px-6 border-b border-gray-800 shrink-0 bg-[#12141a]">
-          <Youtube className="text-red-500 mr-2" size={28} />
-          <span className="text-lg font-bold text-white tracking-tight">DTA Studio</span>
+        <div className="h-24 flex items-center justify-center border-b border-[#1e232b] shrink-0 bg-gradient-to-b from-[#0a0d13] to-[#0d1117] relative overflow-hidden group">
+          <div className="absolute inset-0 bg-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          <div className="flex flex-col items-center justify-center w-full z-10 p-2">
+            <img src="/Logo.png" alt="DTA Manager YT Logo" className="w-14 h-14 object-contain drop-shadow-[0_0_12px_rgba(255,0,0,0.6)] mb-1" />
+            <span className="text-[16px] font-black bg-gradient-to-r from-white via-[#00ffff] to-[#00bfff] bg-clip-text text-transparent tracking-widest uppercase drop-shadow-md">
+              DTA Manager YT
+            </span>
+          </div>
         </div>
 
-        <nav className="p-4 space-y-2 flex-1 overflow-y-auto custom-scrollbar">
+        <nav className="p-4 space-y-2 flex-1 overflow-y-auto min-h-0 custom-scrollbar">
           {menuGroups.map((group) => {
             const visibleItems = group.items.filter(item => hasPermission(item.permission));
 
@@ -249,18 +298,18 @@ function AppContent() {
                 <button
                   onClick={() => toggleGroup(group.id)}
                   className={`
-                    w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors
+                    w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300
                     ${isGroupActive && !isExpanded
-                      ? 'bg-blue-600/10 text-blue-400'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                      ? 'bg-gradient-to-r from-[#00ffff]/10 to-transparent text-[#00ffff] border-l-2 border-[#00ffff]'
+                      : 'text-gray-400 hover:text-white hover:bg-[#1a1f2c] border-l-2 border-transparent'
                     }
                   `}
                 >
                   <div className="flex items-center">
-                    <GroupIcon size={18} className={`mr-3 ${isGroupActive ? 'text-blue-400' : 'text-gray-500'}`} />
-                    <span className="uppercase tracking-wider text-xs">{group.label}</span>
+                    <GroupIcon size={16} className={`mr-2.5 ${isGroupActive ? 'text-[#00ffff]' : 'text-gray-500'}`} />
+                    <span className="uppercase tracking-wider text-[11px]">{group.label}</span>
                   </div>
-                  {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </button>
 
                 {isExpanded && (
@@ -277,15 +326,15 @@ function AppContent() {
                             setIsMobileMenuOpen(false);
                           }}
                           className={`
-                            w-full flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors
+                            w-full flex items-center px-3 py-2 rounded-lg text-xs transition-all duration-300 mb-0.5 mt-0.5
                             ${isActive
-                              ? 'bg-blue-600/20 text-blue-400'
-                              : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
+                              ? 'bg-[#1a2942] text-[#60a5fa] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#2a3d5e]/80'
+                              : 'text-gray-400 hover:text-white hover:bg-[#1e232b] border border-transparent'
                             }
                           `}
                         >
-                          <ItemIcon size={16} className={`mr-3 ${isActive ? 'text-blue-400' : 'text-gray-500'}`} />
-                          {item.label}
+                          <ItemIcon size={14} className={`mr-2.5 transition-colors ${isActive ? 'text-[#60a5fa]' : 'text-gray-500'}`} />
+                          <span className={isActive ? "font-semibold tracking-wide" : "font-medium"}>{item.label}</span>
                         </button>
                       );
                     })}
@@ -322,6 +371,7 @@ function AppContent() {
             <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg mr-2">
               <Menu size={24} />
             </button>
+            <img src="/Logo.png" alt="DTA Studio Logo" className="w-8 h-8 mr-2 object-contain" />
             <span className="font-bold text-gray-900">DTA Studio</span>
           </div>
 
@@ -360,43 +410,56 @@ function AppContent() {
             />
 
             {activeTab === 'dashboard' && (
-              <Dashboard channels={channels} topics={topics} staffList={staffList} financials={financials} tasks={tasks} geminiApiKey={activeGeminiKey} />
+              <Dashboard channels={viewableChannels} topics={topics} staffList={staffList} financials={viewableFinancials} tasks={viewableTasks} geminiApiKey={activeGeminiKey} />
+            )}
+            {activeTab === 'emails' && (
+              <EmailManager 
+                emails={viewableEmails} 
+                setEmails={setManagedEmails} 
+                staffList={staffList} 
+                topics={topics} 
+                currentUser={currentUser} 
+                tasks={tasks}
+                setTasks={setTasks}
+              />
             )}
             {activeTab === 'channels' && (
               <Channels
-                channels={channels}
+                channels={viewableChannels}
                 setChannels={setChannels}
                 topics={topics}
                 setTopics={setTopics}
                 proxies={proxies}
                 privacyMode={privacyMode}
-                sourceChannels={sourceChannels}
+                sourceChannels={viewableSourceChannels}
                 youtubeApiKey={activeYoutubeKey}
                 geminiApiKey={activeGeminiKey}
                 rotateYoutubeKey={rotateYoutubeKey}
-                tasks={tasks}
+                tasks={viewableTasks}
                 staffList={staffList}
-                financials={financials}
-                strikes={strikes}
+                financials={viewableFinancials}
+                strikes={viewableStrikes}
               />
             )}
             {activeTab === 'topics' && (
-              <Topics topics={topics} setTopics={setTopics} />
+              <Topics topics={topics} setTopics={setTopics} staffList={staffList} />
             )}
             {activeTab === 'spy' && (
               <SpyManager
-                sourceChannels={sourceChannels}
+                sourceChannels={viewableSourceChannels}
                 setSourceChannels={setSourceChannels}
-                competitors={competitors}
+                competitors={viewableCompetitors}
                 setCompetitors={setCompetitors}
                 topics={topics}
                 setTopics={setTopics}
-                channels={channels}
+                channels={viewableChannels}
                 youtubeApiKey={activeYoutubeKey || ''}
                 geminiApiKey={activeGeminiKey}
                 rotateYoutubeKey={rotateYoutubeKey}
                 staffList={staffList}
                 currentUser={currentUser}
+                tasks={tasks}
+                setTasks={setTasks}
               />
             )}
             {activeTab === 'niche' && (
@@ -409,23 +472,23 @@ function AppContent() {
               <StaffManager
                 staffList={staffList}
                 setStaffList={setStaffList}
-                channels={channels}
-                tasks={tasks}
+                channels={viewableChannels}
+                tasks={viewableTasks}
                 geminiApiKey={activeGeminiKey}
                 onExportPayroll={handleExportPayroll}
               />
             )}
             {activeTab === 'analysis' && (
               <Analysis
-                channels={channels}
-                sourceChannels={sourceChannels}
+                channels={viewableChannels}
+                sourceChannels={viewableSourceChannels}
                 topics={topics}
                 geminiApiKey={activeGeminiKey}
               />
             )}
             {activeTab === 'kanban' && (
               <VideoCalendar
-                tasks={tasks}
+                tasks={viewableTasks}
                 setTasks={setTasks}
                 channels={channels}
                 staffList={staffList}

@@ -3,10 +3,13 @@ export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, 
 export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipTopVideos: boolean = false) {
   if (!apiKey) throw new Error("Thiếu YouTube API Key. Vui lòng cấu hình trong phần Cài đặt.");
   
-  // 1. Extract ID or Handle
-  const channelIdMatch = url.match(/youtube\.com\/channel\/(UC[\w-]+)/);
-  const handleMatch = url.match(/youtube\.com\/@([\w.-]+)/);
-  const customMatch = url.match(/youtube\.com\/(c|user)\/([\w.-]+)/);
+  // 1. Decode URL để xử lý các ký tự encode (ví dụ tiếng Nhật Bản %E3%83...)
+  const decodedUrl = decodeURIComponent(url);
+
+  // 2. Extract ID or Handle
+  const channelIdMatch = decodedUrl.match(/youtube\.com\/channel\/(UC[\w-]+)/);
+  const handleMatch = decodedUrl.match(/youtube\.com\/@([^/?]+)/);
+  const customMatch = decodedUrl.match(/youtube\.com\/(c|user)\/([^/?]+)/);
   
   let apiUrl = '';
 

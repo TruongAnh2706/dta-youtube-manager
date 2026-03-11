@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Channel, Topic, Proxy, SourceChannel, VideoTask, Staff, FinancialRecord, Strike } from '../types';
 import { Plus, Edit2, Trash2, X, ExternalLink, Search, Eye, EyeOff, ShieldAlert, RefreshCw, Upload, FileDown, AlertCircle, Sparkles, Copy, Check, Download, Clock, Calendar, User, DollarSign, BarChart2, Users, KanbanSquare, ShieldCheck } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import { fetchYoutubeChannelInfo, sleep } from '../services/youtube';
 import { analyzeChannelTopic } from '../services/aiService';
@@ -35,6 +36,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [selectedChannelForDetail, setSelectedChannelForDetail] = useState<Channel | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTopic, setFilterTopic] = useState<string>('all');
+  const [filterNiche, setFilterNiche] = useState<string>('all');
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [isFetching, setIsFetching] = useState(false);
   const [fetchError, setFetchError] = useState('');
@@ -54,6 +56,37 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Bulk action states
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isBulkTopicModalOpen, setIsBulkTopicModalOpen] = useState(false);
+  const [bulkActionTopicIds, setBulkActionTopicIds] = useState<string[]>([]);
+
+  const handleBulkDelete = async () => {
+    if (confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.length} kênh đã chọn?`)) {
+      setChannels(prev => prev.filter(c => !selectedIds.includes(c.id)));
+      
+      const { error } = await supabase.from('channels').delete().in('id', selectedIds);
+      if (error) {
+        showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
+      } else {
+        showToast(`Đã xóa ${selectedIds.length} kênh.`, 'info');
+      }
+      setSelectedIds([]);
+    }
+  };
+
+  const handleBulkAssignTopicSubmit = () => {
+    setChannels(prev => prev.map(c => {
+      if (selectedIds.includes(c.id)) {
+        return { ...c, topicIds: Array.from(new Set([...(c.topicIds || []), ...bulkActionTopicIds])) };
+      }
+      return c;
+    }));
+    showToast(`Đã cập nhật chủ đề cho ${selectedIds.length} kênh.`, 'success');
+    setIsBulkTopicModalOpen(false);
+    setSelectedIds([]);
+  };
+
   const downloadTemplate = () => {
     const template = [
       {
@@ -62,20 +95,19 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         'URL': 'https://www.youtube.com/@handle1',
         'Email': 'email1@example.com',
         'Mật khẩu': 'pass123',
-        'Email khôi phục': 'recovery1@example.com',
         'Mã 2FA': 'ABCD EFGH',
         'Subscribers': 1000,
         'Tổng Views': 50000,
+        'Chủ đề': 'Giải trí, Hài hước',
         'Ghi chú': 'Ghi chú mẫu'
       },
       {
         'Tên kênh': 'Kênh Mẫu 2',
         'URL': 'https://www.youtube.com/channel/UC...',
-        'Email': 'email2@example.com',
-        'Mật khẩu': 'pass456',
-        'Email khôi phục': 'recovery2@example.com',
+        'Mã 2FA': '',
         'Subscribers': 2000,
         'Tổng Views': 100000,
+        'Chủ đề': 'Game',
         'Ghi chú': 'Ghi chú mẫu 2'
       },
     ];
@@ -144,14 +176,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         healthNotes = 'Kênh đã bị đình chỉ hoạt động.';
       }
 
-      const updatedChannels = channels.map(c => c.id === channel.id ? {
+      setChannels(prev => prev.map(c => c.id === channel.id ? {
         ...c,
         healthStatus,
         healthNotes,
         lastHealthCheck: new Date().toISOString()
-      } : c);
-
-      setChannels(updatedChannels);
+      } : c));
       showToast(`Đã hoàn thành kiểm tra sức khỏe kênh ${channel.name}.`, 'success');
     } catch (error) {
       showToast('Lỗi khi kiểm tra sức khỏe kênh.', 'error');
@@ -186,7 +216,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       // Update channel notes with optimized metadata
       const updatedNotes = `${channel.notes}\n\n--- AI OPTIMIZED METADATA (${format(new Date(), 'dd/MM/yyyy')}) ---\nTiêu đề gợi ý: ${result.suggestedTitle}\nMô tả gợi ý: ${result.suggestedDescription}\nTags gợi ý: ${result.suggestedTags?.join(', ')}`;
 
-      setChannels(channels.map(c => c.id === channel.id ? { ...c, notes: updatedNotes } : c));
+      setChannels(prev => prev.map(c => c.id === channel.id ? { ...c, notes: updatedNotes } : c));
       showToast(`Đã tối ưu hóa Metadata cho kênh ${channel.name}. Xem trong phần Ghi chú.`, 'success');
     } catch (error) {
       console.error('Metadata Optimization Error:', error);
@@ -263,7 +293,10 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
             ...updatedChannels[channelIndex],
             topicIds: [...new Set([...existingIds, ...result.suggestedTopicIds])]
           };
-          setChannels([...updatedChannels]);
+          setChannels(prev => prev.map(c => {
+            const match = updatedChannels.find(uc => uc.id === c.id);
+            return match || c;
+          }));
         }
       } catch (err) {
         console.error(`Lỗi AI cho kênh ${target.name}:`, err);
@@ -305,7 +338,10 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           }
           return channel;
         });
-        setChannels(finalUpdatedChannels);
+        setChannels(prev => prev.map(c => {
+          const match = finalUpdatedChannels.find(uc => uc.id === c.id);
+          return match || c;
+        }));
       }
     }
 
@@ -329,24 +365,49 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws) as any[];
 
-        const urls = data.map(row => row.URL || row.url || row['Link']).filter(url => !!url);
+        const validateUrlOrCode = (row: any) => {
+          const urlStr = (row.URL || row.url || row['Link'] || '').toLowerCase();
+          const codeStr = (row['Mã kênh'] || row.channelCode || '').toLowerCase();
+          return { urlStr, codeStr };
+        };
 
-        // Filter out duplicates from current lists
-        const existingUrls = new Set([
-          ...channels.map(c => (c.url || '').toLowerCase()),
-          ...sourceChannels.map(sc => (sc.url || '').toLowerCase())
-        ]);
+        const isValidRow = (row: any) => {
+           const { urlStr, codeStr } = validateUrlOrCode(row);
+           return urlStr !== '' || codeStr !== '';
+        };
 
-        const uniqueUrls = urls.filter(url => !existingUrls.has((url || '').toLowerCase()));
-        const duplicateCount = urls.length - uniqueUrls.length;
+        const validRows = data.filter(isValidRow);
 
-        if (uniqueUrls.length === 0) {
-          alert('Tất cả các kênh trong file đều đã tồn tại trong hệ thống.');
+        let duplicateCount = 0;
+        const newChannelsToImport: any[] = [];
+        
+        validRows.forEach(row => {
+          const { urlStr, codeStr } = validateUrlOrCode(row);
+          
+          // Check duplicates against current channels
+          const isDupUrl = urlStr ? channels.some(c => (c.url || '').toLowerCase() === urlStr) || sourceChannels.some(sc => (sc.url || '').toLowerCase() === urlStr) : false;
+          const isDupCode = codeStr ? channels.some(c => (c.channelCode || '').toLowerCase() === codeStr) : false;
+
+          // Check duplicates within the file itself (already pushed to newChannelsToImport)
+          const isDupInFile = newChannelsToImport.some(c => {
+             const cInfo = validateUrlOrCode(c);
+             return (urlStr && cInfo.urlStr === urlStr) || (codeStr && cInfo.codeStr === codeStr);
+          });
+
+          if (isDupUrl || isDupCode || isDupInFile) {
+            duplicateCount++;
+          } else {
+            newChannelsToImport.push(row);
+          }
+        });
+
+        if (newChannelsToImport.length === 0) {
+          alert('Tất cả các kênh trong file đều đã tồn tại (trùng URL hoặc Mã kênh) hoặc file trống.');
           setIsBulkImporting(false);
           return;
         }
 
-        setImportProgress({ current: 0, total: uniqueUrls.length });
+        setImportProgress({ current: 0, total: newChannelsToImport.length });
 
         const apiKey = youtubeApiKey;
         if (!apiKey) {
@@ -359,10 +420,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         let errorCount = 0;
         let currentApiKey = youtubeApiKey;
 
-        for (let i = 0; i < uniqueUrls.length; i++) {
-          setImportProgress({ current: i + 1, total: uniqueUrls.length });
-          const url = uniqueUrls[i];
-          const row = data.find(r => (r.URL || r.url || r['Link'])?.toLowerCase() === (url || '').toLowerCase()) || {};
+        let createdTopicsMap = new Map<string, string>(); // name -> id
+
+        for (let i = 0; i < newChannelsToImport.length; i++) {
+          setImportProgress({ current: i + 1, total: newChannelsToImport.length });
+          const row = newChannelsToImport[i];
+          const url = row.URL || row.url || row['Link'] || '';
 
           let channelCode = row['Mã kênh'] || row.channelCode || `CH-${Date.now().toString().slice(-4)}${i}`;
           let name = row['Tên kênh'] || row.name || row.Name || 'Kênh mới';
@@ -374,6 +437,36 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           let password = row['Mật khẩu'] || row.password || row.Password || '';
           let recoveryEmail = row['Email khôi phục'] || row.recoveryEmail || '';
           let twoFactorCode = row['Mã 2FA'] || row.twoFactorCode || '';
+          let rawTopicStr = row['Chủ đề'] || row.topics || row.tag || '';
+          
+          let topicIds: string[] = [];
+          if (rawTopicStr) {
+            const topicNames = rawTopicStr.split(',').map((t: string) => t.trim()).filter(Boolean);
+            topicNames.forEach((tName: string) => {
+               // check existing
+               const existingTopic = topics.find(t => t.name.toLowerCase() === tName.toLowerCase());
+               if (existingTopic) {
+                 topicIds.push(existingTopic.id);
+               } else if (createdTopicsMap.has(tName.toLowerCase())) {
+                 topicIds.push(createdTopicsMap.get(tName.toLowerCase())!);
+               } else {
+                 // create new
+                 const newTopicId = `topic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                 createdTopicsMap.set(tName.toLowerCase(), newTopicId);
+                 topicIds.push(newTopicId);
+                 
+                 // Update global topics state immediately
+                 setTopics(prev => [...prev, {
+                    id: newTopicId,
+                    name: tName,
+                    description: 'Tạo tự động từ file Excel',
+                    color: '#' + Math.floor(Math.random()*16777215).toString(16),
+                    tags: [], hashtags: [], country: 'Vietnam',
+                    niche: 'Khác'
+                 }]);
+               }
+            });
+          }
 
           try {
             // Add delay to avoid rate limits
@@ -398,7 +491,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                 continue;
               }
               showToast('Hết quota API YouTube và không còn Key dự phòng. Quá trình nhập dừng lại.', 'error');
-              errorCount += (uniqueUrls.length - i);
+              errorCount += (newChannelsToImport.length - i);
               break;
             }
             // Skip failed channel
@@ -414,7 +507,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
             avatarUrl,
             subscribers,
             totalViews,
-            topicIds: [],
+            topicIds: Array.from(new Set(topicIds)),
             status: 'active',
             notes,
             email,
@@ -429,7 +522,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           successCount++;
         }
 
-        showToast(`Nhập hoàn tất: Tổng ${uniqueUrls.length} kênh, thành công ${successCount}, lỗi ${errorCount}.${duplicateCount > 0 ? ` (Bỏ qua ${duplicateCount} kênh trùng lặp)` : ''}`, successCount > 0 ? 'success' : 'error');
+        showToast(`Nhập hoàn tất: Tổng ${newChannelsToImport.length} kênh mới, lỗi ${errorCount}.${duplicateCount > 0 ? ` (Bỏ qua ${duplicateCount} kênh trùng lặp)` : ''}${createdTopicsMap.size > 0 ? ` Đã tạo tự động ${createdTopicsMap.size} chủ đề.` : ''}`, successCount > 0 ? 'success' : 'error');
       } catch (err) {
         showToast('Lỗi khi đọc file Excel. Vui lòng kiểm tra lại định dạng.', 'error');
       } finally {
@@ -503,31 +596,44 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     e.preventDefault();
 
     // Check for duplicates
-    const isDuplicate = (editingChannel
-      ? channels.some(c => (c.url || '').toLowerCase() === (formData.url || '').toLowerCase() && c.id !== editingChannel.id)
-      : channels.some(c => (c.url || '').toLowerCase() === (formData.url || '').toLowerCase())) ||
-      sourceChannels.some(sc => (sc.url || '').toLowerCase() === (formData.url || '').toLowerCase());
+    const checkUrl = formData.url?.toLowerCase().trim() || '';
+    const checkCode = formData.channelCode?.toLowerCase().trim() || '';
 
-    if (isDuplicate) {
-      if (!confirm('Kênh này đã tồn tại trong danh sách Tài khoản hoặc Kênh nguồn. Bạn vẫn muốn tiếp tục lưu?')) {
+    const isDupUrl = checkUrl !== '' && (
+      (editingChannel ? channels.some(c => (c.url || '').toLowerCase() === checkUrl && c.id !== editingChannel.id) : channels.some(c => (c.url || '').toLowerCase() === checkUrl)) ||
+      sourceChannels.some(sc => (sc.url || '').toLowerCase() === checkUrl)
+    );
+
+    const isDupCode = checkCode !== '' && (
+      editingChannel ? channels.some(c => (c.channelCode || '').toLowerCase() === checkCode && c.id !== editingChannel.id) : channels.some(c => (c.channelCode || '').toLowerCase() === checkCode)
+    );
+
+    if (isDupUrl || isDupCode) {
+      if (!confirm(`Kênh này đã tồn tại (Trùng ${isDupUrl ? 'URL' : 'Mã kênh'}). Bạn vẫn muốn tiếp tục lưu?`)) {
         return;
       }
     }
 
     if (editingChannel) {
-      setChannels(channels.map(c => c.id === editingChannel.id ? { ...c, ...formData } : c));
+      setChannels(prev => prev.map(c => c.id === editingChannel.id ? { ...c, ...formData } : c));
       showToast('Đã cập nhật thông tin kênh thành công!', 'success');
     } else {
-      setChannels([...channels, { id: Date.now().toString(), ...formData }]);
+      setChannels(prev => [...prev, { id: Date.now().toString(), ...formData }]);
       showToast('Đã thêm kênh mới thành công!', 'success');
     }
     handleCloseModal();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa kênh này?')) {
       setChannels(prev => prev.filter(c => c.id !== id));
-      showToast('Đã xóa kênh.', 'info');
+      
+      const { error } = await supabase.from('channels').delete().eq('id', id);
+      if (error) {
+        showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
+      } else {
+        showToast('Đã xóa kênh.', 'info');
+      }
     }
   };
 
@@ -580,7 +686,16 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       (c.channelCode || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
       (c.notes || '').toLowerCase().includes((searchTerm || '').toLowerCase());
     const matchesTopic = filterTopic === 'all' || (c.topicIds || []).includes(filterTopic);
-    return matchesSearch && matchesTopic;
+    
+    let matchesNiche = true;
+    if (filterNiche !== 'all') {
+      matchesNiche = (c.topicIds || []).some(tId => {
+        const t = topics.find(topic => topic.id === tId);
+        return t && (t.niche || 'Khác') === filterNiche;
+      });
+    }
+
+    return matchesSearch && matchesTopic && matchesNiche;
   });
 
   return (
@@ -641,22 +756,57 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+      <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
         <div className="relative flex-grow">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input type="text" placeholder="Tìm kiếm kênh..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
+        
+        <select value={filterNiche} onChange={e => setFilterNiche(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
+          <option value="all">Tất cả Nhóm CĐ</option>
+          {Array.from(new Set(topics.map(t => t.niche || 'Khác'))).map(niche => (
+            <option key={niche} value={niche}>{niche}</option>
+          ))}
+        </select>
+        
         <select value={filterTopic} onChange={e => setFilterTopic(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
-          <option value="all">Tất cả chủ đề</option>
-          {topics.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          <option value="all">Tất cả tag chủ đề</option>
+          {topics.filter(t => filterNiche === 'all' || (t.niche || 'Khác') === filterNiche).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </div>
+
+      {selectedIds.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center justify-between shadow-sm">
+          <span className="text-sm font-medium text-blue-800">
+            Đã chọn <strong>{selectedIds.length}</strong> kênh
+          </span>
+          <div className="flex space-x-2">
+            <button onClick={() => { setBulkActionTopicIds([]); setIsBulkTopicModalOpen(true); }} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors">
+              Gắn Chủ đề
+            </button>
+            <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors">
+              Xóa {selectedIds.length} kênh
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100 text-sm text-gray-500">
+                <th className="p-4 font-medium w-10">
+                  <input 
+                    type="checkbox" 
+                    checked={filteredChannels.length > 0 && selectedIds.length === filteredChannels.length}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedIds(filteredChannels.map(c => c.id));
+                      else setSelectedIds([]);
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                </th>
                 <th className="p-4 font-medium">Kênh</th>
                 <th className="p-4 font-medium">Bảo mật (Email/Pass)</th>
                 <th className="p-4 font-medium">Proxy/VPS</th>
@@ -667,8 +817,20 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
             <tbody className="divide-y divide-gray-100">
               {filteredChannels.map(channel => {
                 const proxy = proxies.find(p => p.id === channel.proxyId);
+                const isSelected = selectedIds.includes(channel.id);
                 return (
-                  <tr key={channel.id} className={`hover:bg-gray-50 transition-all ${analyzingChannelId === channel.id ? 'bg-purple-50 ring-1 ring-inset ring-purple-200' : ''}`}>
+                  <tr key={channel.id} className={`hover:bg-gray-50 transition-all ${isSelected ? 'bg-blue-50/30' : ''} ${analyzingChannelId === channel.id ? 'bg-purple-50 ring-1 ring-inset ring-purple-200' : ''}`}>
+                    <td className="p-4">
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedIds(prev => [...prev, channel.id]);
+                          else setSelectedIds(prev => prev.filter(id => id !== channel.id));
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="p-4">
                       <div className="flex items-center space-x-3">
                         <div className="relative">
@@ -804,11 +966,43 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                   </tr>
                 );
               })}
-              {filteredChannels.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-gray-500">Không tìm thấy kênh nào.</td></tr>}
+              {filteredChannels.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-gray-500">Không tìm thấy kênh nào.</td></tr>}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Modal Bulk Assign Topics */}
+      {isBulkTopicModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-white">
+              <h2 className="text-lg font-semibold flex items-center">
+                <Sparkles className="text-blue-500 mr-2" size={20} /> Gắn Chủ đề ({selectedIds.length} kênh)
+              </h2>
+              <button onClick={() => setIsBulkTopicModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="overflow-y-auto p-6 space-y-4">
+              <p className="text-sm text-gray-600 font-medium">Chọn các chủ đề muốn gán thêm cho các kênh đã chọn:</p>
+              <div className="flex flex-wrap gap-2">
+                {topics.map(topic => (
+                  <button key={topic.id} onClick={() => {
+                    setBulkActionTopicIds(prev => prev.includes(topic.id) ? prev.filter(id => id !== topic.id) : [...prev, topic.id]);
+                  }} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${bulkActionTopicIds.includes(topic.id) ? 'border-transparent text-white shadow-sm scale-105' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`} style={bulkActionTopicIds.includes(topic.id) ? { backgroundColor: topic.color } : {}}>
+                    {topic.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end space-x-3 bg-gray-50">
+              <button onClick={() => setIsBulkTopicModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm">Hủy</button>
+              <button onClick={handleBulkAssignTopicSubmit} disabled={bulkActionTopicIds.length === 0} className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 shadow-sm flex items-center">
+                <Check size={16} className="mr-1" /> Áp dụng ngay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
