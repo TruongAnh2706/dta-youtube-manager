@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Asset, AssetType, Proxy, Topic, ManagedEmail, Staff } from '../types';
-import { Plus, Edit2, Trash2, X, HardDrive, Video, Music, LayoutTemplate, Globe, Server, Type, Film, ExternalLink, RefreshCw, AlertCircle, Sparkles, Calendar, BrainCircuit, Mail, Copy, Check } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, HardDrive, Video, Music, LayoutTemplate, Globe, Server, Type, Film, ExternalLink, RefreshCw, AlertCircle, Sparkles, Calendar, BrainCircuit, Mail, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface AssetManagerProps {
   assets: Asset[];
@@ -28,9 +29,26 @@ const ASSET_TYPES: { id: AssetType; label: string; icon: React.ElementType; colo
 
 export function AssetManager({ assets, setAssets, proxies, setProxies, topics, geminiApiKey, managedEmails, setManagedEmails, staffList }: AssetManagerProps) {
   const { showToast } = useToast();
+  const { hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState<'assets' | 'proxies' | 'emails'>('assets');
   const [isCheckingProxies, setIsCheckingProxies] = useState(false);
   const [isRecommending, setIsRecommending] = useState(false);
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+
+  // AI Recommender State
+  const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
+
+  // Mini Dashboard metrics
+  const expiredAssets = assets.filter(a => {
+    if (!a.expirationDate) return false;
+    return new Date(a.expirationDate).getTime() < new Date().getTime();
+  }).length;
+  const deadProxies = proxies.filter(p => p.status === 'dead' || p.status === 'inactive').length;
+  const unassignedEmails = managedEmails.filter(m => !m.assignedTo).length;
+
+  const togglePasswordVisibility = (id: string) => {
+    setShowPasswords(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   // Asset Modal State
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
@@ -103,7 +121,8 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
       });
 
       const recommendation = response.text || 'Không có đề xuất.';
-      showToast(`ĐỀ XUẤT TÀI NGUYÊN AI: ${recommendation}`, 'success', 15000);
+      setAiRecommendation(recommendation);
+      showToast('Đã nhận được đề xuất từ AI!', 'success');
     } catch (error) {
       showToast('Lỗi khi nhận đề xuất tài nguyên.', 'error');
     } finally {
@@ -125,6 +144,34 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
 
   return (
     <div className="space-y-6">
+      {/* Mini Dashboard Tổng quan Tài sản */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+          <div>
+            <p className="text-gray-500 text-sm font-medium">Cảnh báo Bản quyền</p>
+            <h4 className="text-2xl font-bold text-gray-900">{expiredAssets}</h4>
+            <span className="text-xs text-red-500 font-medium">Tài nguyên quá hạn</span>
+          </div>
+          <div className="p-3 bg-red-50 rounded-lg text-red-500"><Calendar size={24} /></div>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+          <div>
+            <p className="text-gray-500 text-sm font-medium">Trạng thái Proxy</p>
+            <h4 className="text-2xl font-bold text-gray-900">{proxies.length > 0 ? `${proxies.length - deadProxies}/${proxies.length}` : '0'}</h4>
+            <span className="text-xs text-blue-500 font-medium">{deadProxies} Proxy bị ngỏm/tắt</span>
+          </div>
+          <div className="p-3 bg-blue-50 rounded-lg text-blue-500"><Globe size={24} /></div>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+          <div>
+            <p className="text-gray-500 text-sm font-medium">Hộp thư vệ tinh</p>
+            <h4 className="text-2xl font-bold text-gray-900">{managedEmails.length}</h4>
+            <span className="text-xs text-amber-500 font-medium">{unassignedEmails} Email bỏ trống</span>
+          </div>
+          <div className="p-3 bg-amber-50 rounded-lg text-amber-500"><Mail size={24} /></div>
+        </div>
+      </div>
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Tài nguyên & Proxy</h1>
@@ -163,9 +210,14 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
               {isRecommending ? <RefreshCw size={16} className="mr-2 animate-spin" /> : <BrainCircuit size={16} className="mr-2" />}
               AI Resource Recommender
             </button>
-            <button onClick={() => { setEditingAsset(null); setAssetForm({ name: '', type: 'drive', url: '', notes: '', expirationDate: '' }); setIsAssetModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
-              <Plus size={16} className="mr-2" /> Thêm tài nguyên
-            </button>
+            {hasPermission('assets_edit') && (
+              <button 
+                onClick={() => { setEditingAsset(null); setAssetForm({ name: '', type: 'drive', url: '', notes: '', expirationDate: '' }); setIsAssetModalOpen(true); }} 
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors"
+              >
+                <Plus size={16} className="mr-2" /> Thêm tài nguyên
+              </button>
+            )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {assets.map(asset => {
@@ -183,10 +235,12 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                         <span className="text-xs text-gray-500">{typeInfo?.label}</span>
                       </div>
                     </div>
-                    <div className="flex space-x-1">
-                      <button onClick={() => { setEditingAsset(asset); setAssetForm(asset); setIsAssetModalOpen(true); }} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={16} /></button>
-                      <button onClick={() => setAssets(prev => prev.filter(a => a.id !== asset.id))} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
-                    </div>
+                    {hasPermission('assets_edit') && (
+                      <div className="flex space-x-1">
+                        <button onClick={() => { setEditingAsset(asset); setAssetForm(asset); setIsAssetModalOpen(true); }} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={16} /></button>
+                        <button onClick={() => setAssets(prev => prev.filter(a => a.id !== asset.id))} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                      </div>
+                    )}
                   </div>
 
                   {licenseStatus && (
@@ -221,18 +275,21 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                 setIsCheckingProxies(true);
                 setTimeout(() => {
                   setProxies(prev => prev.map(p => ({ ...p, status: Math.random() > 0.2 ? 'active' : 'dead' })));
+                  showToast('Đã kiểm tra xong danh sách Proxy!', 'success');
                   setIsCheckingProxies(false);
                 }, 2000);
               }}
               disabled={isCheckingProxies || proxies.length === 0}
-              className="text-sm flex items-center text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50"
+              className="text-sm flex items-center text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50 border border-blue-200 bg-blue-50 px-3 py-1.5 rounded-lg"
             >
               <RefreshCw size={16} className={`mr-2 ${isCheckingProxies ? 'animate-spin' : ''}`} />
-              {isCheckingProxies ? 'Đang kiểm tra...' : 'Check Live Proxy'}
+              {isCheckingProxies ? 'Đang Live Check...' : 'Phân tích IPv4'}
             </button>
-            <button onClick={() => { setEditingProxy(null); setProxyForm({ ip: '', port: '', username: '', password: '', status: 'active', notes: '' }); setIsProxyModalOpen(true); }} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
-              <Plus size={16} className="mr-2" /> Thêm Proxy/VPS
-            </button>
+            {hasPermission('channels_manage_proxy') && (
+              <button onClick={() => { setEditingProxy(null); setProxyForm({ ip: '', port: '', username: '', password: '', status: 'active', notes: '' }); setIsProxyModalOpen(true); }} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
+                <Plus size={16} className="mr-2" /> Thêm Proxy/VPS
+              </button>
+            )}
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <table className="w-full text-left border-collapse">
@@ -248,17 +305,38 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
               <tbody className="divide-y divide-gray-100">
                 {proxies.map(proxy => (
                   <tr key={proxy.id} className="hover:bg-gray-50">
-                    <td className="p-4 font-mono text-sm text-gray-900 flex items-center"><Globe size={16} className="mr-2 text-gray-400" /> {proxy.ip}:{proxy.port}</td>
-                    <td className="p-4 text-sm text-gray-600">{proxy.username ? `${proxy.username}:***` : 'No Auth'}</td>
+                    <td className="p-4 font-mono text-sm text-gray-900 flex items-center">
+                      <Globe size={16} className={`mr-2 ${proxy.status === 'dead' ? 'text-red-400' : 'text-blue-500'}`} /> {proxy.ip}:{proxy.port}
+                      {isCheckingProxies && <span className="ml-2 w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping"></span>}
+                    </td>
+                    <td className="p-4 text-sm text-gray-600">
+                      {proxy.username ? (
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono bg-gray-100 px-1 rounded text-xs select-all">
+                            {proxy.username}:{showPasswords[proxy.id] ? proxy.password : '••••••••'}
+                          </span>
+                          <button onClick={() => handleCopy(`${proxy.username}:${proxy.password}`)} className="text-gray-400 hover:text-blue-600" title="Copy Auth"><Copy size={13} /></button>
+                          {hasPermission('channels_view_sensitive') && (
+                            <button onClick={() => togglePasswordVisibility(proxy.id)} className="text-gray-400 hover:text-purple-600">
+                              {showPasswords[proxy.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                            </button>
+                          )}
+                        </div>
+                      ) : 'No Auth'}
+                    </td>
                     <td className="p-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${proxy.status === 'active' ? 'bg-green-100 text-green-800' : proxy.status === 'inactive' ? 'bg-gray-100 text-gray-800' : 'bg-red-100 text-red-800'}`}>
-                        {proxy.status.toUpperCase()}
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase transition-colors duration-500 ${proxy.status === 'active' ? 'bg-green-100 text-green-700' : proxy.status === 'inactive' ? 'bg-gray-100 text-gray-600' : 'bg-rose-100 text-rose-700 animate-pulse'}`}>
+                        {proxy.status}
                       </span>
                     </td>
                     <td className="p-4 text-sm text-gray-600">{proxy.notes}</td>
-                    <td className="p-4 text-right">
-                      <button onClick={() => { setEditingProxy(proxy); setProxyForm(proxy); setIsProxyModalOpen(true); }} className="p-1 text-gray-400 hover:text-purple-600"><Edit2 size={16} /></button>
-                      <button onClick={() => setProxies(prev => prev.filter(p => p.id !== proxy.id))} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                    <td className="p-4 text-right whitespace-nowrap">
+                      {hasPermission('channels_manage_proxy') && (
+                        <>
+                          <button onClick={() => { setEditingProxy(proxy); setProxyForm(proxy); setIsProxyModalOpen(true); }} className="p-1 text-gray-400 hover:text-purple-600"><Edit2 size={16} /></button>
+                          <button onClick={() => setProxies(prev => prev.filter(p => p.id !== proxy.id))} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -272,10 +350,16 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
       {activeTab === 'emails' && (
         <div className="space-y-4">
           <div className="flex justify-between items-center">
-            <h2 className="text-lg font-semibold text-gray-800 flex items-center"><Mail className="mr-2" size={20} /> Kho Email</h2>
-            <button onClick={() => { setEditingEmail(null); setEmailForm({ channelCode: '', email: '', password: '', recoveryEmail: '', twoFactorAuth: '', verificationPhone: '', assignedTo: '', status: 'new', notes: '' }); setIsEmailModalOpen(true); }} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
-              <Plus size={16} className="mr-2" /> Thêm Email mới
-            </button>
+            <h2 className="text-lg font-semibold text-gray-800 flex items-center"><Mail className="mr-2 text-rose-500" size={20} /> Kho Email (Dữ liệu Nhạy cảm)</h2>
+            {hasPermission('channels_view_sensitive') && (
+              <button 
+                onClick={() => { setEditingEmail(null); setEmailForm({ channelCode: '', email: '', password: '', recoveryEmail: '', twoFactorAuth: '', verificationPhone: '', assignedTo: '', status: 'new', notes: '' }); setIsEmailModalOpen(true); }} 
+                className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors"
+                title="Yêu cầu quyền nhạy cảm"
+              >
+                <Plus size={16} className="mr-2" /> Nhập Mail Mới
+              </button>
+            )}
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[800px]">
@@ -301,11 +385,24 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                       </div>
                     </td>
                     <td className="p-4 text-sm">
-                      <button onClick={() => handleCopy(mail.password || '')} className="text-gray-500 hover:text-gray-900 flex items-center text-xs border rounded bg-white px-2 py-1 shadow-sm">
-                        <Copy size={12} className="mr-1" /> Copy Pass
-                      </button>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono bg-gray-100 px-1 rounded text-xs select-all text-gray-700 min-w-[60px] text-center">
+                          {showPasswords[mail.id] ? mail.password : '••••••••'}
+                        </span>
+                        <button onClick={() => handleCopy(mail.password || '')} className="text-gray-400 hover:text-blue-600" title="Copy Mật khẩu"><Copy size={13} /></button>
+                        {hasPermission('channels_view_sensitive') && (
+                          <button onClick={() => togglePasswordVisibility(mail.id)} className="text-gray-400 hover:text-rose-600" title={showPasswords[mail.id] ? "Ẩn Mật khẩu" : "Hiện Mật khẩu"}>
+                            {showPasswords[mail.id] ? <EyeOff size={13} /> : <Eye size={13} />}
+                          </button>
+                        )}
+                      </div>
                       {mail.twoFactorAuth && (
-                        <div className="mt-1 text-[10px] text-gray-400 font-mono truncate max-w-[100px]" title={mail.twoFactorAuth}>2FA: {mail.twoFactorAuth}</div>
+                        <div className="mt-1.5 flex items-center space-x-2 bg-gray-50 border border-gray-100 rounded px-1.5 py-0.5 w-fit">
+                          <span className="text-[10px] text-gray-500 font-mono font-bold" title={mail.twoFactorAuth}>
+                            2FA: {showPasswords[mail.id] ? mail.twoFactorAuth : '••••••'}
+                          </span>
+                          <button onClick={() => handleCopy(mail.twoFactorAuth || '')} className="text-gray-400 hover:text-blue-600"><Copy size={10} /></button>
+                        </div>
                       )}
                     </td>
                     <td className="p-4 text-sm text-gray-600">
@@ -331,10 +428,14 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                     </td>
                     <td className="p-4 text-sm text-gray-500 ">{mail.notes}</td>
                     <td className="p-4 text-right whitespace-nowrap">
-                      <button onClick={() => { setEditingEmail(mail); setEmailForm(mail); setIsEmailModalOpen(true); }} className="p-1 text-gray-400 hover:text-rose-600"><Edit2 size={16} /></button>
-                      <button onClick={() => {
-                        if (confirm('Xóa Email này ra khỏi cơ sở dữ liệu?')) setManagedEmails(prev => prev.filter(m => m.id !== mail.id));
-                      }} className="p-1 text-gray-400 hover:text-red-600 ml-1"><Trash2 size={16} /></button>
+                      {hasPermission('channels_view_sensitive') && (
+                        <>
+                          <button onClick={() => { setEditingEmail(mail); setEmailForm(mail); setIsEmailModalOpen(true); }} className="p-1 text-gray-400 hover:text-rose-600" title="Sửa Email"><Edit2 size={16} /></button>
+                          <button onClick={() => {
+                            if (confirm('Xóa Email này ra khỏi cơ sở dữ liệu?')) setManagedEmails(prev => prev.filter(m => m.id !== mail.id));
+                          }} className="p-1 text-gray-400 hover:text-red-600 ml-1" title="Xóa Email"><Trash2 size={16} /></button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -408,8 +509,36 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Mã Kênh Định Danh</label><input type="text" value={emailForm.channelCode} onChange={e => setEmailForm({ ...emailForm, channelCode: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2" placeholder="VD: CH_1..." /></div>
               </div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú thêm</label><textarea value={emailForm.notes} onChange={e => setEmailForm({ ...emailForm, notes: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2" rows={2} /></div>
-              <div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={() => setIsEmailModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-lg">Hủy</button><button type="submit" className="px-4 py-2 bg-rose-600 text-white rounded-lg">Lưu</button></div>
+              <div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={() => setIsEmailModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-lg font-bold">Thoát</button><button type="submit" className="px-4 py-2 bg-rose-600 text-white rounded-lg font-bold">Lưu Email</button></div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* AI Recommendation Modal */}
+      {aiRecommendation && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 transition-opacity duration-300">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden transform transition-all">
+            <div className="flex justify-between items-center p-5 border-b border-indigo-100 bg-gradient-to-r from-indigo-50 to-blue-50">
+              <h2 className="text-lg font-black text-indigo-900 flex items-center"><BrainCircuit className="mr-2 text-indigo-500" size={24} /> Trợ lý AI Phân tích Kho Dữ liệu</h2>
+              <button onClick={() => setAiRecommendation(null)} className="text-indigo-400 hover:text-indigo-600"><X size={24} /></button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm font-semibold text-gray-500 mb-3 uppercase tracking-wider">Đề xuất gợi ý:</p>
+              <div className="prose prose-sm max-w-none mb-6 whitespace-pre-wrap text-gray-700 bg-gray-50/80 p-5 rounded-xl border border-gray-100 shadow-inner">
+                {aiRecommendation}
+              </div>
+              <div className="flex justify-end space-x-3 pt-2">
+                <button type="button" onClick={() => setAiRecommendation(null)} className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition-colors border">Bỏ qua</button>
+                <button onClick={() => {
+                   setAssetForm({ name: 'Tài nguyên gợi ý từ AI', type: 'drive', url: '', notes: aiRecommendation.substring(0, 150) + '...', expirationDate: '' });
+                   setIsAssetModalOpen(true);
+                   setAiRecommendation(null);
+                }} className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 shadow-md text-white font-bold rounded-lg transition-all flex items-center transform hover:scale-105">
+                  <Plus size={18} className="mr-2" /> Lưu mới vào Kho
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

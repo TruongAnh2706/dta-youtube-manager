@@ -275,7 +275,7 @@ function AppContent() {
         <div className="h-24 flex items-center justify-center border-b border-[#1e232b] shrink-0 bg-gradient-to-b from-[#0a0d13] to-[#0d1117] relative overflow-hidden group">
           <div className="absolute inset-0 bg-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           <div className="flex flex-col items-center justify-center w-full z-10 p-2">
-            <img src="/Logo.png" alt="DTA Manager YT Logo" className="w-14 h-14 object-contain drop-shadow-[0_0_12px_rgba(255,0,0,0.6)] mb-1" />
+            <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="DTA Manager YT Logo" className="w-14 h-14 object-contain drop-shadow-[0_0_12px_rgba(255,0,0,0.6)] mb-1" />
             <span className="text-[16px] font-black bg-gradient-to-r from-white via-[#00ffff] to-[#00bfff] bg-clip-text text-transparent tracking-widest uppercase drop-shadow-md">
               DTA Manager YT
             </span>
@@ -371,7 +371,7 @@ function AppContent() {
             <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg mr-2">
               <Menu size={24} />
             </button>
-            <img src="/Logo.png" alt="DTA Studio Logo" className="w-8 h-8 mr-2 object-contain" />
+            <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="DTA Studio Logo" className="w-8 h-8 mr-2 object-contain" />
             <span className="font-bold text-gray-900">DTA Studio</span>
           </div>
 
@@ -410,7 +410,7 @@ function AppContent() {
             />
 
             {activeTab === 'dashboard' && (
-              <Dashboard channels={viewableChannels} topics={topics} staffList={staffList} financials={viewableFinancials} tasks={viewableTasks} geminiApiKey={activeGeminiKey} />
+              <Dashboard channels={viewableChannels} topics={topics} staffList={staffList} financials={viewableFinancials} tasks={viewableTasks} geminiApiKey={activeGeminiKey} currentUser={currentUser} />
             )}
             {activeTab === 'emails' && (
               <EmailManager 
@@ -421,6 +421,7 @@ function AppContent() {
                 currentUser={currentUser} 
                 tasks={tasks}
                 setTasks={setTasks}
+                systemSettings={systemSettings}
               />
             )}
             {activeTab === 'channels' && (
@@ -437,6 +438,7 @@ function AppContent() {
                 rotateYoutubeKey={rotateYoutubeKey}
                 tasks={viewableTasks}
                 staffList={staffList}
+                setStaffList={setStaffList}
                 financials={viewableFinancials}
                 strikes={viewableStrikes}
               />
@@ -484,6 +486,10 @@ function AppContent() {
                 sourceChannels={viewableSourceChannels}
                 topics={topics}
                 geminiApiKey={activeGeminiKey}
+                currentUser={currentUser}
+                staffList={staffList}
+                tasks={tasks}
+                setTasks={setTasks}
               />
             )}
             {activeTab === 'kanban' && (
@@ -495,6 +501,8 @@ function AppContent() {
                 assets={assets}
                 currentUser={currentUser}
                 geminiApiKey={activeGeminiKey}
+                systemSettings={systemSettings}
+                setActiveTab={setActiveTab}
               />
             )}
             {activeTab === 'tasks' && (
@@ -507,6 +515,7 @@ function AppContent() {
                 currentUser={currentUser}
                 dailyReports={dailyReports}
                 setDailyReports={setDailyReports}
+                systemSettings={systemSettings}
               />
             )}
             {activeTab === 'finance' && (

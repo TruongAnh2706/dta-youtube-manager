@@ -22,12 +22,13 @@ interface ChannelsProps {
   rotateYoutubeKey: () => boolean;
   tasks: VideoTask[];
   staffList: Staff[];
+  setStaffList: React.Dispatch<React.SetStateAction<Staff[]>>;
   financials: FinancialRecord[];
   strikes: Strike[];
   geminiApiKey?: string;
 }
 
-export function Channels({ channels, setChannels, topics, setTopics, proxies, privacyMode, sourceChannels, youtubeApiKey, rotateYoutubeKey, tasks, staffList, financials, strikes, geminiApiKey }: ChannelsProps) {
+export function Channels({ channels, setChannels, topics, setTopics, proxies, privacyMode, sourceChannels, youtubeApiKey, rotateYoutubeKey, tasks, staffList, setStaffList, financials, strikes, geminiApiKey }: ChannelsProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,9 +38,11 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTopic, setFilterTopic] = useState<string>('all');
   const [filterNiche, setFilterNiche] = useState<string>('all');
+  const [filterStaff, setFilterStaff] = useState<string>('all');
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [isFetching, setIsFetching] = useState(false);
   const [fetchError, setFetchError] = useState('');
+  const [editingStaffIds, setEditingStaffIds] = useState<string[]>([]);
 
   const [formData, setFormData] = useState<Omit<Channel, 'id'>>({
     channelCode: '', name: '', url: '', avatarUrl: '', subscribers: 0, totalViews: 0, topicIds: [], status: 'active', notes: '',
@@ -60,6 +63,8 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkTopicModalOpen, setIsBulkTopicModalOpen] = useState(false);
   const [bulkActionTopicIds, setBulkActionTopicIds] = useState<string[]>([]);
+  const [isBulkStaffModalOpen, setIsBulkStaffModalOpen] = useState(false);
+  const [bulkActionStaffId, setBulkActionStaffId] = useState<string>('');
 
   const handleBulkDelete = async () => {
     if (confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.length} kênh đã chọn?`)) {
@@ -85,6 +90,67 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     showToast(`Đã cập nhật chủ đề cho ${selectedIds.length} kênh.`, 'success');
     setIsBulkTopicModalOpen(false);
     setSelectedIds([]);
+  };
+
+  const handleBulkAssignStaffSubmit = async () => {
+    if (!bulkActionStaffId) return;
+    
+    // We don't have setStaffList passed as a prop to Channels.tsx!
+    // We will have to update staff data either via calling a function passed down, or directly in supabase.
+    // For now, let's just show a toast and tell the user to use the Staff tab.
+    
+    // It's better to update the assignedChannelIds on the chosen staff
+    const selectedStaff = staffList.find(s => s.id === bulkActionStaffId);
+    if (!selectedStaff) return;
+
+    const currentAssigned = selectedStaff.assignedChannelIds || [];
+    const newAssigned = Array.from(new Set([...currentAssigned, ...selectedIds]));
+
+    const { error } = await supabase.from('staff_list').update({ assigned_channel_ids: newAssigned }).eq('id', bulkActionStaffId);
+    
+    if (error) {
+      showToast(`Lỗi gán nhân sự: ${error.message}`, 'error');
+    } else {
+      setStaffList(prev => prev.map(s => s.id === bulkActionStaffId ? { ...s, assignedChannelIds: newAssigned } : s));
+      showToast(`Đã giao ${selectedIds.length} kênh cho nhân sự ${selectedStaff.name}. F5 hoặc qua tab Nhân sự để thấy thay đổi!`, 'success');
+      setIsBulkStaffModalOpen(false);
+      setSelectedIds([]);
+    }
+  };
+
+  const handleBulkRemoveStaffSubmit = async () => {
+    const staffsToUpdate = staffList.filter(s => 
+      (s.assignedChannelIds || []).some(id => selectedIds.includes(id))
+    );
+
+    if (staffsToUpdate.length === 0) {
+      showToast('Các kênh này chưa có nhân sự nào quản lý.', 'info');
+      setIsBulkStaffModalOpen(false);
+      return;
+    }
+
+    if (!confirm(`Bạn có chắc muốn hủy bỏ nhân sự quản lý khỏi ${selectedIds.length} kênh này?`)) return;
+
+    const promises = staffsToUpdate.map(staff => {
+      const newAssigned = (staff.assignedChannelIds || []).filter(id => !selectedIds.includes(id));
+      return supabase.from('staff_list').update({ assigned_channel_ids: newAssigned }).eq('id', staff.id)
+        .then(({error}) => ({ staff, newAssigned, error }));
+    });
+
+    const results = await Promise.all(promises);
+    
+    if (results.some(r => r.error)) {
+      showToast('Có lỗi xảy ra khi hủy nhân sự trên server.', 'error');
+    } else {
+      let newStaffList = [...staffList];
+      results.forEach(r => {
+        newStaffList = newStaffList.map(s => s.id === r.staff.id ? { ...s, assignedChannelIds: r.newAssigned } : s);
+      });
+      setStaffList(newStaffList);
+      showToast(`Đã hủy nhân sự quản lý cho ${selectedIds.length} kênh.`, 'success');
+      setIsBulkStaffModalOpen(false);
+      setSelectedIds([]);
+    }
   };
 
   const downloadTemplate = () => {
@@ -543,6 +609,8 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         email: channel.email || '', password: channel.password || '', recoveryEmail: channel.recoveryEmail || '', twoFactorCode: channel.twoFactorCode || '', proxyId: channel.proxyId || '',
         postingSchedules: channel.postingSchedules || [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
       });
+      const assignedToChannel = staffList.filter(s => (s.assignedChannelIds || []).includes(channel.id)).map(s => s.id);
+      setEditingStaffIds(assignedToChannel);
     } else {
       setEditingChannel(null);
       setFormData({
@@ -551,6 +619,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         email: '', password: '', recoveryEmail: '', twoFactorCode: '', proxyId: '',
         postingSchedules: [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
       });
+      setEditingStaffIds([]);
     }
     setIsModalOpen(true);
   };
@@ -592,6 +661,26 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     }
   };
 
+  const updateStaffChannelAssignment = (channelId: string, newStaffIds: string[]) => {
+    const currentStaffIds = staffList.filter(s => (s.assignedChannelIds || []).includes(channelId)).map(s => s.id);
+    const staffToAdd = newStaffIds.filter(id => !currentStaffIds.includes(id));
+    const staffToRemove = currentStaffIds.filter(id => !newStaffIds.includes(id));
+
+    if (staffToAdd.length === 0 && staffToRemove.length === 0) return;
+
+    const newStaffList = staffList.map(staff => {
+      let assigned = staff.assignedChannelIds || [];
+      if (staffToAdd.includes(staff.id)) assigned = [...new Set([...assigned, channelId])];
+      if (staffToRemove.includes(staff.id)) assigned = assigned.filter(id => id !== channelId);
+      
+      if (staffToAdd.includes(staff.id) || staffToRemove.includes(staff.id)) {
+        supabase.from('staff_list').update({ assigned_channel_ids: assigned }).eq('id', staff.id).then();
+      }
+      return { ...staff, assignedChannelIds: assigned };
+    });
+    setStaffList(newStaffList);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -616,9 +705,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
 
     if (editingChannel) {
       setChannels(prev => prev.map(c => c.id === editingChannel.id ? { ...c, ...formData } : c));
+      updateStaffChannelAssignment(editingChannel.id, editingStaffIds);
       showToast('Đã cập nhật thông tin kênh thành công!', 'success');
     } else {
-      setChannels(prev => [...prev, { id: Date.now().toString(), ...formData }]);
+      const newId = Date.now().toString();
+      setChannels(prev => [...prev, { id: newId, ...formData }]);
+      updateStaffChannelAssignment(newId, editingStaffIds);
       showToast('Đã thêm kênh mới thành công!', 'success');
     }
     handleCloseModal();
@@ -695,7 +787,15 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       });
     }
 
-    return matchesSearch && matchesTopic && matchesNiche;
+    let matchesStaff = true;
+    if (filterStaff !== 'all' && hasPermission('staff_view')) {
+      const staffMember = staffList.find(s => s.id === filterStaff);
+      if (staffMember) {
+        matchesStaff = (staffMember.assignedChannelIds || []).includes(c.id);
+      }
+    }
+
+    return matchesSearch && matchesTopic && matchesNiche && matchesStaff;
   });
 
   return (
@@ -773,17 +873,29 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           <option value="all">Tất cả tag chủ đề</option>
           {topics.filter(t => filterNiche === 'all' || (t.niche || 'Khác') === filterNiche).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
+
+        {hasPermission('staff_view') && (
+          <select value={filterStaff} onChange={e => setFilterStaff(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
+            <option value="all">Tất cả nhân sự</option>
+            {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
       </div>
 
       {selectedIds.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center justify-between shadow-sm">
+        <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center justify-between shadow-sm flex-wrap gap-2">
           <span className="text-sm font-medium text-blue-800">
             Đã chọn <strong>{selectedIds.length}</strong> kênh
           </span>
-          <div className="flex space-x-2">
+          <div className="flex flex-wrap space-x-2">
             <button onClick={() => { setBulkActionTopicIds([]); setIsBulkTopicModalOpen(true); }} className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors">
               Gắn Chủ đề
             </button>
+            {hasPermission('staff_edit') && (
+              <button onClick={() => { setBulkActionStaffId(''); setIsBulkStaffModalOpen(true); }} className="px-3 py-1.5 bg-teal-600 text-white rounded text-sm hover:bg-teal-700 transition-colors">
+                Giao cho Nhân sự
+              </button>
+            )}
             <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors">
               Xóa {selectedIds.length} kênh
             </button>
@@ -859,6 +971,18 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                             </span>
                             <span className="font-medium text-gray-900">{channel.name}</span>
                           </div>
+                          
+                          {/* Hiển thị nhân sự */}
+                          {staffList.filter(s => (s.assignedChannelIds || []).includes(channel.id)).length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5 items-center">
+                              <Users size={10} className="text-gray-400 mr-0.5" />
+                              {staffList.filter(s => (s.assignedChannelIds || []).includes(channel.id)).map(staff => (
+                                <span key={staff.id} className="text-[9px] font-medium bg-teal-50 text-teal-700 px-1.5 py-0.5 rounded-md border border-teal-100">
+                                  {staff.name}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                           <div className="flex flex-wrap gap-1 mt-1 items-center">
                             {(channel.topicIds || []).length > 0 ? (
                               <>
@@ -1004,6 +1128,38 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         </div>
       )}
 
+      {/* Modal Bulk Assign Staff */}
+      {isBulkStaffModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-white">
+              <h2 className="text-lg font-semibold flex items-center">
+                <Users className="text-teal-500 mr-2" size={20} /> Giao Kênh ({selectedIds.length} kênh)
+              </h2>
+              <button onClick={() => setIsBulkStaffModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="overflow-y-auto p-6 space-y-4">
+              <p className="text-sm text-gray-600 font-medium">Chọn nhân sự để gán thêm các kênh này:</p>
+              <select value={bulkActionStaffId} onChange={e => setBulkActionStaffId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white">
+                <option value="" disabled>-- Chọn Nhân sự --</option>
+                {staffList.map(s => <option key={s.id} value={s.id}>{s.name} ({s.role})</option>)}
+              </select>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-between bg-gray-50 items-center">
+              <button onClick={handleBulkRemoveStaffSubmit} className="px-3 py-2 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200">
+                Bỏ quản lý
+              </button>
+              <div className="flex space-x-3">
+                <button onClick={() => setIsBulkStaffModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm">Hủy</button>
+                <button onClick={handleBulkAssignStaffSubmit} disabled={!bulkActionStaffId} className="px-4 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 rounded-lg disabled:opacity-50 shadow-sm flex items-center">
+                  <Check size={16} className="mr-1" /> Giao việc
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden max-h-[90vh] flex flex-col">
@@ -1049,6 +1205,38 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                         <option value="active">Đang hoạt động</option><option value="inactive">Tạm ngưng</option><option value="suspended">Bị đình chỉ (Bay màu)</option>
                       </select>
                     </div>
+                    {hasPermission('staff_edit') && (
+                      <div className="md:col-span-2 mt-2 border-t border-gray-100 pt-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Nhân sự quản lý kênh</label>
+                        <div className="flex flex-wrap gap-2">
+                          {staffList.filter(s => s.role !== 'admin').map(staff => {
+                            const isSelected = editingStaffIds.includes(staff.id);
+                            return (
+                              <button
+                                key={staff.id}
+                                type="button"
+                                onClick={() => {
+                                  setEditingStaffIds(prev => 
+                                    prev.includes(staff.id) ? prev.filter(id => id !== staff.id) : [...prev, staff.id]
+                                  );
+                                }}
+                                className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors flex items-center ${
+                                  isSelected
+                                    ? 'bg-teal-600 border-teal-600 text-white shadow-sm'
+                                    : 'bg-white border-gray-300 text-gray-600 hover:bg-teal-50 hover:border-teal-300'
+                                }`}
+                              >
+                                {isSelected ? <Check size={12} className="mr-1" /> : <Users size={12} className="mr-1" />}
+                                {staff.name}
+                              </button>
+                            );
+                          })}
+                          {staffList.filter(s => s.role !== 'admin').length === 0 && (
+                            <span className="text-sm text-gray-500 italic">Chưa có nhân sự nào trong hệ thống (Ngoài Admin).</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

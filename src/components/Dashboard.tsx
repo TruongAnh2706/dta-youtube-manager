@@ -12,9 +12,10 @@ interface DashboardProps {
   financials?: FinancialRecord[];
   tasks?: VideoTask[];
   geminiApiKey?: string;
+  currentUser?: Staff | { role: string; name: string; id: string } | null;
 }
 
-export function Dashboard({ channels, topics, staffList = [], financials = [], tasks = [], geminiApiKey }: DashboardProps) {
+export function Dashboard({ channels, topics, staffList = [], financials = [], tasks = [], geminiApiKey, currentUser }: DashboardProps) {
   const { showToast } = useToast();
   const [isAIAnalyzing, setIsAIAnalyzing] = useState(false);
   const [aiInsights, setAiInsights] = useState<string[]>([]);
@@ -23,6 +24,7 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
   const activeChannels = channels.filter(c => c.status === 'active').length;
   const suspendedChannels = channels.filter(c => c.status === 'suspended').length;
   const totalSubscribers = channels.reduce((sum, c) => sum + c.subscribers, 0);
+  const isManagement = currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
   // Calculate current month cashflow
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -79,14 +81,20 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
         activeChannels,
         suspendedChannels,
         totalSubscribers,
-        currentMonthProfit: netProfit,
+        currentMonthProfit: isManagement ? netProfit : undefined,
+        currentMonthRevenue: isManagement ? totalRevenue : undefined,
         todayKpi: `${todayPublished}/${todayTarget}`,
-        onlineStaff: onlineStaff.length
+        onlineStaff: onlineStaff.length,
+        topTopics: topics.slice(0, 3).map(t => t.name).join(', ')
       };
+
+      const prompt = isManagement
+        ? `Tư cách là quản lý MCN YouTube. Phân tích dữ liệu quản trị sau và đưa ra 3-5 lời khuyên chiến lược vận hành và tăng doanh thu ngắn gọn (mỗi lời khuyên 1 câu): ${JSON.stringify(systemData)}`
+        : `Tư cách quản lý MCN. Phân tích dữ liệu sản xuất sau (không liên quan tài chính) và đưa ra 3-5 lời khuyên tối ưu năng suất, chất lượng video ngắn gọn (mỗi lời khuyên 1 câu): ${JSON.stringify(systemData)}`;
 
       const response = await ai.models.generateContent({
         model,
-        contents: `Phân tích dữ liệu hệ thống YouTube CMS sau và đưa ra 3-5 lời khuyên chiến lược ngắn gọn (mỗi lời khuyên 1 câu): ${JSON.stringify(systemData)}`,
+        contents: prompt,
       });
 
       const insights = response.text?.split('\n').filter(line => line.trim().length > 0).slice(0, 5) || [];
@@ -176,9 +184,9 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
           <div className="p-3 bg-orange-50 text-orange-600 rounded-lg mr-4"><CheckCircle2 size={24} /></div>
           <div><p className="text-sm text-gray-500 font-medium">KPI Hôm nay</p><p className="text-2xl font-bold text-gray-900">{todayPublished}/{todayTarget}</p></div>
         </div>
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center">
+        <div className={`bg-white p-5 rounded-xl shadow-sm border ${suspendedChannels > 0 ? 'border-red-500 animate-[pulse_2s_ease-in-out_infinite] shadow-red-100' : 'border-gray-100'} flex items-center`}>
           <div className="p-3 bg-red-50 text-red-600 rounded-lg mr-4"><AlertCircle size={24} /></div>
-          <div><p className="text-sm text-gray-500 font-medium">Kênh bay màu</p><p className="text-2xl font-bold text-gray-900">{suspendedChannels}</p></div>
+          <div><p className={`text-sm font-medium ${suspendedChannels > 0 ? 'text-red-600' : 'text-gray-500'}`}>Kênh bay màu</p><p className="text-2xl font-bold text-gray-900">{suspendedChannels}</p></div>
         </div>
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center">
           <div className="p-3 bg-purple-50 text-purple-600 rounded-lg mr-4"><Users size={24} /></div>
@@ -268,7 +276,7 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
         </div>
 
         {/* Middle Column: Heatmap / Topic Distribution */}
-        <div className="lg:col-span-1 bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+        <div className={`${isManagement ? 'lg:col-span-1' : 'lg:col-span-2'} bg-white p-5 rounded-xl shadow-sm border border-gray-100`}>
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center"><Hash size={18} className="mr-2 text-purple-500" /> Phân bổ Chủ đề (Heatmap)</h2>
           <div className="space-y-4">
             {topics.map(topic => {
@@ -299,59 +307,61 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
         </div>
 
         {/* Right Column: Cashflow & Forecasting */}
-        <div className="space-y-6">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center"><DollarSign size={18} className="mr-2 text-green-500" /> Dòng tiền Tháng {currentMonth.split('-')[1]}</h2>
+        {isManagement && (
+          <div className="space-y-6">
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center"><DollarSign size={18} className="mr-2 text-green-500" /> Dòng tiền Tháng {currentMonth.split('-')[1]}</h2>
 
-            <div className="space-y-4">
-              <div className="p-4 bg-green-50 rounded-lg border border-green-100">
-                <p className="text-sm text-green-800 font-medium mb-1">Tổng Doanh Thu</p>
-                <p className="text-2xl font-bold text-green-600">{totalRevenue.toLocaleString('vi-VN')} đ</p>
-              </div>
-
-              <div className="p-4 bg-red-50 rounded-lg border border-red-100">
-                <p className="text-sm text-red-800 font-medium mb-1">Tổng Chi Phí</p>
-                <p className="text-2xl font-bold text-red-600">{totalExpenses.toLocaleString('vi-VN')} đ</p>
-              </div>
-
-              <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 relative overflow-hidden">
-                <div className="relative z-10">
-                  <p className="text-sm text-blue-800 font-medium mb-1">Lợi Nhuận Ròng</p>
-                  <p className="text-3xl font-bold text-blue-600">{netProfit.toLocaleString('vi-VN')} đ</p>
+              <div className="space-y-4">
+                <div className="p-4 bg-green-50 rounded-lg border border-green-100">
+                  <p className="text-sm text-green-800 font-medium mb-1">Tổng Doanh Thu</p>
+                  <p className="text-2xl font-bold text-green-600">{totalRevenue.toLocaleString('vi-VN')} đ</p>
                 </div>
-                <TrendingUp size={80} className="absolute -bottom-4 -right-4 text-blue-100 opacity-50" />
+
+                <div className="p-4 bg-red-50 rounded-lg border border-red-100">
+                  <p className="text-sm text-red-800 font-medium mb-1">Tổng Chi Phí</p>
+                  <p className="text-2xl font-bold text-red-600">{totalExpenses.toLocaleString('vi-VN')} đ</p>
+                </div>
+
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 relative overflow-hidden">
+                  <div className="relative z-10">
+                    <p className="text-sm text-blue-800 font-medium mb-1">Lợi Nhuận Ròng</p>
+                    <p className="text-3xl font-bold text-blue-600">{netProfit.toLocaleString('vi-VN')} đ</p>
+                  </div>
+                  <TrendingUp size={80} className="absolute -bottom-4 -right-4 text-blue-100 opacity-50" />
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Revenue Forecasting */}
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-              <LineChart size={18} className="mr-2 text-indigo-500" /> Dự báo Doanh thu (AI)
-            </h2>
-            {forecastData ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                  <div>
-                    <p className="text-xs text-indigo-700 font-medium uppercase">Dự báo tháng {forecastData.nextMonth}</p>
-                    <p className="text-xl font-bold text-indigo-900">{forecastData.estimatedRevenue.toLocaleString('vi-VN')} đ</p>
+            {/* Revenue Forecasting */}
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <LineChart size={18} className="mr-2 text-indigo-500" /> Dự báo Doanh thu (AI)
+              </h2>
+              {forecastData ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between p-3 bg-indigo-50 rounded-lg border border-indigo-100">
+                    <div>
+                      <p className="text-xs text-indigo-700 font-medium uppercase">Dự báo tháng {forecastData.nextMonth}</p>
+                      <p className="text-xl font-bold text-indigo-900">{forecastData.estimatedRevenue.toLocaleString('vi-VN')} đ</p>
+                    </div>
+                    <div className={`flex items-center ${forecastData.growthRate >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {forecastData.growthRate >= 0 ? <ArrowUpRight size={20} /> : <ArrowDownRight size={20} />}
+                      <span className="font-bold ml-1">{Math.abs(forecastData.growthRate).toFixed(1)}%</span>
+                    </div>
                   </div>
-                  <div className={`flex items-center ${forecastData.growthRate >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {forecastData.growthRate >= 0 ? <ArrowUpRight size={20} /> : <ArrowDownRight size={20} />}
-                    <span className="font-bold ml-1">{Math.abs(forecastData.growthRate).toFixed(1)}%</span>
-                  </div>
+                  <p className="text-[10px] text-gray-500 italic">
+                    * Dự báo dựa trên xu hướng tăng trưởng của 3 tháng gần nhất. Kết quả thực tế có thể thay đổi tùy theo biến động thị trường.
+                  </p>
                 </div>
-                <p className="text-[10px] text-gray-500 italic">
-                  * Dự báo dựa trên xu hướng tăng trưởng của 3 tháng gần nhất. Kết quả thực tế có thể thay đổi tùy theo biến động thị trường.
-                </p>
-              </div>
-            ) : (
-              <div className="text-center py-6 text-gray-400 text-xs italic">
-                Cần ít nhất 2 tháng dữ liệu tài chính để thực hiện dự báo.
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-6 text-gray-400 text-xs italic">
+                  Cần ít nhất 2 tháng dữ liệu tài chính để thực hiện dự báo.
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

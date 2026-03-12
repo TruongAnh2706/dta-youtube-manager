@@ -4,7 +4,7 @@ import {
   Plus, Edit2, Trash2, X, ChevronRight, ChevronLeft,
   Calendar as CalendarIcon, Sparkles, AlertCircle, Clock,
   CheckCircle2, Circle, User, BarChart3, TrendingUp,
-  Youtube, Users, Target, CheckCircle, Video
+  Youtube, Users, Target, CheckCircle, Video, Loader
 } from 'lucide-react';
 import {
   format, isPast, isToday, addDays, startOfMonth,
@@ -27,13 +27,16 @@ interface VideoCalendarProps {
   currentUser: { role: string; name: string } | null;
   geminiApiKey?: string;
   assets?: Asset[];
+  systemSettings?: import('../types').SystemSettings;
+  setActiveTab?: (tab: string) => void;
 }
 
-export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [], currentUser, geminiApiKey }: VideoCalendarProps) {
+export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [], currentUser, geminiApiKey, systemSettings, setActiveTab }: VideoCalendarProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [editingTask, setEditingTask] = useState<VideoTask | null>(null);
   const [filterChannel, setFilterChannel] = useState<string>('all');
   const [filterStaff, setFilterStaff] = useState<string>('all');
@@ -41,7 +44,7 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
   const [formData, setFormData] = useState<Omit<VideoTask, 'id'>>({
     title: '',
     channelId: channels[0]?.id || '',
-    status: 'idea',
+    status: 'pending',
     assigneeIds: [],
     dueDate: format(new Date(), 'yyyy-MM-dd'),
     publishTime: '10:00',
@@ -59,14 +62,30 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
   const [isGeneratingSEO, setIsGeneratingSEO] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
 
-  const workflowSteps = [
-    { id: 'idea', label: 'Ý tưởng', icon: <Target size={14} /> },
-    { id: 'script', label: 'Kịch bản', icon: <Edit2 size={14} /> },
-    { id: 'voiceover', label: 'Thu âm', icon: <Users size={14} /> },
-    { id: 'editing', label: 'Dựng phim', icon: <Video size={14} /> },
-    { id: 'review', label: 'Duyệt', icon: <CheckCircle size={14} /> },
-    { id: 'published', label: 'Đã đăng', icon: <Youtube size={14} /> }
-  ];
+  const rawWorkflowSteps = systemSettings?.taskStatuses || [];
+  const getIconForStatus = (id: string, size = 14) => {
+    switch (id) {
+      case 'pending':
+      case 'idea': return <Target size={size} />;
+      case 'in_progress':
+      case 'script': return <Edit2 size={size} />;
+      case 'voiceover': return <Users size={size} />;
+      case 'completed':
+      case 'editing': return <Video size={size} />;
+      case 'review': return <CheckCircle size={size} />;
+      case 'published': return <Youtube size={size} />;
+      default: return <Circle size={size} />;
+    }
+  };
+
+  const workflowSteps = rawWorkflowSteps.map(s => ({
+    id: s.id,
+    label: s.label,
+    icon: getIconForStatus(s.id),
+    color: s.color
+  }));
+
+  const defaultTaskStatus = workflowSteps.length > 0 ? workflowSteps[0].id : 'pending';
 
   // Calendar logic
   const monthStart = startOfMonth(currentDate);
@@ -111,7 +130,7 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
       setFormData({
         title: '',
         channelId: filterChannel !== 'all' ? filterChannel : (channels[0]?.id || ''),
-        status: 'idea',
+        status: defaultTaskStatus as TaskStatus,
         assigneeIds: defaultAssignee,
         dueDate: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
         publishTime: '10:00',
@@ -193,13 +212,28 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
     }
   };
 
+  const currentUserStaff = staffList.find(s => s.name === currentUser?.name);
+  const canViewAll = hasPermission('calendar_view_all');
+
+  const viewableTasks = useMemo(() => {
+    if (canViewAll) return tasks;
+    if (!currentUserStaff) return [];
+    return tasks.filter(t => (t.assigneeIds || []).includes(currentUserStaff.id));
+  }, [tasks, canViewAll, currentUserStaff]);
+
+  const displayStaffList = useMemo(() => {
+    if (canViewAll) return staffList;
+    if (!currentUserStaff) return [];
+    return [currentUserStaff];
+  }, [staffList, canViewAll, currentUserStaff]);
+
   // KPI Calculations
-  const monthTasks = tasks.filter(t => isSameMonth(new Date(t.dueDate), currentDate));
+  const monthTasks = viewableTasks.filter(t => isSameMonth(new Date(t.dueDate), currentDate));
   const publishedCount = monthTasks.filter(t => t.status === 'published').length;
   const totalTarget = monthTasks.length;
 
   const staffKPI = useMemo(() => {
-    return staffList.map(staff => {
+    return displayStaffList.map(staff => {
       const assignedTasks = monthTasks.filter(t => (t.assigneeIds || []).includes(staff.id));
       const postedTasks = assignedTasks.filter(t => t.status === 'published');
       return {
@@ -209,31 +243,25 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
         percent: assignedTasks.length > 0 ? Math.round((postedTasks.length / assignedTasks.length) * 100) : 0
       };
     }).sort((a, b) => b.posted - a.posted);
-  }, [monthTasks, staffList]);
+  }, [monthTasks, displayStaffList]);
 
   const dailyProduction = useMemo(() => {
     const today = new Date();
-    const todayTasks = tasks.filter(t => isSameDay(new Date(t.dueDate), today));
+    const todayTasks = viewableTasks.filter(t => isSameDay(new Date(t.dueDate), today));
     return {
       total: todayTasks.length,
       published: todayTasks.filter(t => t.status === 'published').length
     };
-  }, [tasks]);
+  }, [viewableTasks]);
 
   const filteredTasks = useMemo(() => {
-    const currentUserStaff = staffList.find(s => s.name === currentUser?.name);
-    const canViewAll = hasPermission('calendar_view_all');
-
-    return tasks.filter(t => {
+    return viewableTasks.filter(t => {
       const channelMatch = filterChannel === 'all' || t.channelId === filterChannel;
       const staffMatch = filterStaff === 'all' || (t.assigneeIds || []).includes(filterStaff);
 
-      // Permission check: if not admin/manager and can't view all, only show own tasks
-      const ownershipMatch = canViewAll || (currentUserStaff && (t.assigneeIds || []).includes(currentUserStaff.id));
-
-      return channelMatch && staffMatch && ownershipMatch;
+      return channelMatch && staffMatch;
     });
-  }, [tasks, filterChannel, filterStaff, hasPermission, staffList, currentUser]);
+  }, [viewableTasks, filterChannel, filterStaff]);
 
   return (
     <div className="space-y-6 flex flex-col h-full">
@@ -260,18 +288,23 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
             {channels.map(c => <option key={c.id} value={c.id}>[{c.channelCode}] {c.name}</option>)}
           </select>
 
-          <select
-            value={filterStaff}
-            onChange={e => setFilterStaff(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
-          >
-            <option value="all">Tất cả nhân sự</option>
-            {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          {canViewAll && (
+            <select
+              value={filterStaff}
+              onChange={e => setFilterStaff(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+            >
+              <option value="all">Tất cả nhân sự</option>
+              {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
 
           {hasPermission('calendar_edit') && (
             <button
-              onClick={() => handleOpenModal()}
+              onClick={() => {
+                if (setActiveTab) setActiveTab('tasks');
+                else handleOpenModal();
+              }}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm"
             >
               <Plus size={16} className="mr-2" /> Lên lịch mới
@@ -306,8 +339,8 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
         <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center">
           <div className="p-3 bg-orange-50 text-orange-600 rounded-lg mr-4"><Users size={24} /></div>
           <div>
-            <p className="text-xs text-gray-500 font-medium">Nhân sự tích cực</p>
-            <p className="text-xl font-bold text-gray-900">{staffKPI.filter(s => s.posted > 0).length} / {staffList.length}</p>
+            <p className="text-xs text-gray-500 font-medium">{canViewAll ? 'Nhân sự tích cực' : 'Tiến độ'}</p>
+            <p className="text-xl font-bold text-gray-900">{staffKPI.filter(s => s.posted > 0).length} / {displayStaffList.length}</p>
           </div>
         </div>
       </div>
@@ -334,10 +367,15 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
               return (
                 <div
                   key={idx}
-                  className={`min-h-[120px] border-r border-b border-gray-100 p-2 transition-colors hover:bg-gray-50/50 group ${!isCurrentMonth ? 'bg-gray-50/30' : ''
-                    } ${isTodayDay ? 'bg-blue-50/20' : ''}`}
+                  onClick={() => {
+                    if (dayTasks.length > 0) {
+                      setSelectedDay(day);
+                    }
+                  }}
+                  className={`min-h-[100px] border-r border-b border-gray-100 p-2 transition-colors cursor-pointer hover:bg-gray-50/50 group ${!isCurrentMonth ? 'bg-gray-50/30' : ''
+                    } ${isTodayDay ? 'bg-blue-50/10' : ''}`}
                 >
-                  <div className="flex justify-between items-center mb-1">
+                  <div className="flex justify-between items-center mb-2">
                     <span className={`text-xs font-bold ${isTodayDay ? 'bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center' :
                       isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
                       }`}>
@@ -345,66 +383,31 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
                     </span>
                     {hasPermission('calendar_edit') && (
                       <button
-                        onClick={() => handleOpenModal(undefined, day)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (setActiveTab) setActiveTab('tasks');
+                          else handleOpenModal(undefined, day);
+                        }}
                         className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-600 transition-opacity"
+                        title="Tạo lịch đăng mới"
                       >
                         <Plus size={14} />
                       </button>
                     )}
                   </div>
 
-                  <div className="space-y-1">
-                    {dayTasks.map(task => {
-                      const channel = channels.find(c => c.id === task.channelId);
-                      const isPublished = task.status === 'published';
-
-                      return (
-                        <div
-                          key={task.id}
-                          className={`p-1.5 rounded border text-[10px] leading-tight transition-all cursor-pointer hover:shadow-sm ${isPublished
-                            ? 'bg-green-50 border-green-200 text-green-800'
-                            : 'bg-white border-gray-200 text-gray-700'
-                            }`}
-                          onClick={() => handleOpenModal(task)}
-                        >
-                          <div className="flex items-center justify-between mb-0.5">
-                            <span className="font-bold truncate max-w-[60px]">[{channel?.channelCode || '??'}]</span>
-                            <div className="flex items-center gap-1">
-                              <span className={`px-1 rounded-sm text-[8px] font-bold ${task.videoType === 'shorts' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                                {task.videoType === 'shorts' ? 'S' : 'L'}
-                              </span>
-                              {isPublished ? <CheckCircle size={10} className="text-green-600" /> : <Circle size={10} className="text-gray-300" />}
-                            </div>
-                          </div>
-                          <p className="truncate font-medium">{task.title}</p>
-
-                          {/* Workflow Progress Mini */}
-                          <div className="flex gap-0.5 mt-1.5">
-                            {workflowSteps.map(step => {
-                              const stepIdx = workflowSteps.findIndex(s => s.id === step.id);
-                              const currentIdx = workflowSteps.findIndex(s => s.id === task.status);
-                              return (
-                                <div
-                                  key={step.id}
-                                  className={`h-1 flex-1 rounded-full ${stepIdx <= currentIdx ? 'bg-blue-500' : 'bg-gray-200'}`}
-                                />
-                              );
-                            })}
-                          </div>
-
-                          <div className="flex items-center justify-between mt-1 text-[9px] opacity-70">
-                            <div className="flex items-center truncate">
-                              <User size={8} className="mr-1" />
-                              <span className="truncate">
-                                {task.assigneeIds.map(id => staffList.find(s => s.id === id)?.name).join(', ') || 'Chưa giao'}
-                              </span>
-                            </div>
-                            {task.publishTime && <span className="font-mono">{task.publishTime}</span>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  {dayTasks.length > 0 && (
+                    <div className="flex flex-col gap-1 mt-2">
+                      <div className="text-center p-1.5 bg-blue-50 border border-blue-100 rounded-lg">
+                        <span className="text-lg font-black text-blue-600">{dayTasks.length}</span>
+                        <p className="text-[10px] text-blue-500 font-medium tracking-wide uppercase mt-0.5">Video</p>
+                      </div>
+                      <div className="flex justify-between text-[10px] font-medium mt-1 px-1">
+                        <span className="text-gray-500">Đã đăng:</span>
+                        <span className="text-green-600 font-bold">{dayTasks.filter(t => t.status === 'published').length}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -419,9 +422,9 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
               <CheckCircle2 size={16} className="mr-2 text-green-600" /> Trạng thái Hôm nay
             </h2>
             <div className="space-y-3">
-              {staffList.map(staff => {
+              {displayStaffList.map(staff => {
                 const today = new Date();
-                const todayTasks = tasks.filter(t => (t.assigneeIds || []).includes(staff.id) && isSameDay(new Date(t.dueDate), today));
+                const todayTasks = viewableTasks.filter(t => (t.assigneeIds || []).includes(staff.id) && isSameDay(new Date(t.dueDate), today));
                 const completedToday = todayTasks.length > 0 && todayTasks.every(t => t.status === 'published');
                 const hasTasksToday = todayTasks.length > 0;
 
@@ -446,7 +449,7 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
                   </div>
                 );
               })}
-              {staffList.length === 0 && <p className="text-xs text-gray-500 italic text-center py-2">Chưa có nhân sự</p>}
+              {displayStaffList.length === 0 && <p className="text-xs text-gray-500 italic text-center py-2">Chưa có nhân sự</p>}
             </div>
           </div>
 
@@ -476,7 +479,7 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
                   </div>
                 </div>
               ))}
-              {staffList.length === 0 && <p className="text-xs text-gray-500 italic text-center py-4">Chưa có dữ liệu nhân sự</p>}
+              {displayStaffList.length === 0 && <p className="text-xs text-gray-500 italic text-center py-4">Chưa có dữ liệu nhân sự</p>}
             </div>
           </div>
 
@@ -671,6 +674,136 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
                   <button type="submit" form="task-form" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">Lưu Lịch Đăng</button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Daily Tasks Popup Modal */}
+      {selectedDay && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[80vh]">
+            <div className="flex justify-between items-center p-5 border-b border-gray-100 bg-gray-50 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center font-bold text-lg">
+                  {format(selectedDay, 'd')}
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Danh sách Lịch đăng</h2>
+                  <p className="text-sm text-gray-500">Thứ {format(selectedDay, 'i')}, ngày {format(selectedDay, 'dd/MM/yyyy')}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setSelectedDay(null)} 
+                className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="overflow-y-auto p-5 space-y-3 bg-gray-50/50 flex-1">
+              {filteredTasks
+                .filter(t => isSameDay(new Date(t.dueDate), selectedDay))
+                .sort((a, b) => (a.publishTime || '00:00').localeCompare(b.publishTime || '00:00'))
+                .map(task => {
+                  const channel = channels.find(c => c.id === task.channelId);
+                  const isPublished = task.status === 'published';
+                  const currentStepIdx = workflowSteps.findIndex(s => s.id === task.status);
+
+                  return (
+                    <div
+                      key={task.id}
+                      className={`flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl border transition-all cursor-pointer hover:shadow-md ${isPublished
+                        ? 'bg-green-50/50 border-green-200'
+                        : 'bg-white border-gray-200'
+                        }`}
+                      onClick={() => {
+                        setSelectedDay(null);
+                        if (setActiveTab) setActiveTab('tasks');
+                        else handleOpenModal(task);
+                      }}
+                    >
+                      <div className="flex-1 flex flex-col md:flex-row md:items-center gap-4">
+                        <div className="flex flex-col items-center justify-center shrink-0 w-16 p-2 bg-gray-50 rounded-lg border border-gray-100">
+                          <Clock size={16} className={`mb-1 ${isPublished ? 'text-green-500' : 'text-blue-500'}`} />
+                          <span className="font-mono text-sm font-bold text-gray-700">{task.publishTime || '--:--'}</span>
+                        </div>
+                        
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            {channel && (
+                              <span className="px-2 py-0.5 text-xs font-bold bg-gray-100 text-gray-600 rounded">
+                                [{channel.channelCode}]
+                              </span>
+                            )}
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${task.videoType === 'shorts' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
+                              {task.videoType === 'shorts' ? 'SHORTS' : 'LONG VIDEO'}
+                            </span>
+                          </div>
+                          <h3 className="font-bold text-gray-900 text-sm truncate">{task.title}</h3>
+                          
+                          {/* Workflow Progress Mini */}
+                          <div className="flex items-center gap-1 mt-2 max-w-xs">
+                            {workflowSteps.map((step, stepIdx) => (
+                              <div
+                                key={step.id}
+                                className={`h-1.5 flex-1 rounded-full ${stepIdx <= currentStepIdx ? 'bg-blue-500' : 'bg-gray-200'}`}
+                                title={step.label}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-start md:items-end mt-4 md:mt-0 shrink-0">
+                         <div className="flex items-center gap-2 mb-2">
+                            {task.assigneeIds.length > 0 ? (
+                              <div className="flex -space-x-2">
+                                {task.assigneeIds.map(id => {
+                                  const staff = staffList.find(s => s.id === id);
+                                  return staff ? (
+                                    <div key={id} className="w-6 h-6 rounded-full bg-blue-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-blue-700" title={staff.name}>
+                                      {staff.name.charAt(0)}
+                                    </div>
+                                  ) : null;
+                                })}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400 italic">Chưa phân công</span>
+                            )}
+                         </div>
+                         <div className={`px-2 py-1 flex items-center text-xs font-bold rounded-full ${isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                           {isPublished ? <CheckCircle2 size={12} className="mr-1" /> : <Loader size={12} className="mr-1 animate-spin-slow" />}
+                           {workflowSteps.find(s => s.id === task.status)?.label || task.status}
+                         </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              {filteredTasks.filter(t => isSameDay(new Date(t.dueDate), selectedDay)).length === 0 && (
+                <div className="text-center py-8 text-gray-500 text-sm">
+                  Không có video nào được lên lịch cho ngày này.
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-gray-100 bg-white shrink-0 flex justify-between items-center">
+               <button 
+                  onClick={() => {
+                    setSelectedDay(null);
+                    if (setActiveTab) setActiveTab('tasks');
+                    else handleOpenModal(undefined, selectedDay);
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center transition-colors"
+                >
+                  <Plus size={16} className="mr-2" /> Thêm lịch đăng
+                </button>
+                <button 
+                  onClick={() => setSelectedDay(null)}
+                  className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  Đóng lại
+                </button>
             </div>
           </div>
         </div>

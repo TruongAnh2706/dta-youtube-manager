@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { SourceChannel, Topic, Channel, Staff, VideoTask } from '../types';
-import { Plus, Edit2, Trash2, X, ExternalLink, Star, RefreshCw, ChevronDown, ChevronUp, Youtube, Calendar, Eye, Video, Clock, Upload, FileDown, AlertCircle, Sparkles, Search, Download, Users } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ExternalLink, Star, RefreshCw, ChevronDown, ChevronUp, Youtube, Calendar, Eye, Video, Clock, Upload, FileDown, AlertCircle, Sparkles, Search, Download, Users, BrainCircuit, ClipboardList } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
@@ -83,6 +83,19 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
   const [isBulkStaffModalOpen, setIsBulkStaffModalOpen] = useState(false);
   const [bulkActionStaffIds, setBulkActionStaffIds] = useState<string[]>([]);
 
+  // Action state cho Giao Task
+  const [isAssignTaskModalOpen, setIsAssignTaskModalOpen] = useState(false);
+  const [assignTaskChannelIds, setAssignTaskChannelIds] = useState<string[]>([]);
+  const [assignTaskFormData, setAssignTaskFormData] = useState({
+    title: '[Khai thác Kênh nguồn] ',
+    description: '',
+    assigneeId: '',
+    deadline: '',
+  });
+
+  // Action state cho Viral Modal
+  const [viralModalVideo, setViralModalVideo] = useState<{ channeledId: string, channelName: string, video: any } | null>(null);
+
   const handleBulkDelete = async () => {
     if (confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.length} kênh nguồn đã chọn?`)) {
       setSourceChannels(prev => prev.filter(c => !selectedIds.includes(c.id)));
@@ -110,28 +123,6 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
   };
 
   const handleBulkAssignStaffSubmit = () => {
-    // Thu thập danh sách các kênh nguồn được chọn
-    const assignedChannels = sourceChannels.filter(c => selectedIds.includes(c.id));
-    
-    // Tạo tasks cho từng nhân sự được chọn ứng với mỗi kênh nguồn
-    const newTasks: VideoTask[] = [];
-    assignedChannels.forEach(channel => {
-      bulkActionStaffIds.forEach((staffId, index) => {
-        newTasks.push({
-          id: `task_scr_${Date.now()}_${channel.id}_${staffId}_${index}`,
-          title: `[Khai thác Kênh nguồn] ${channel.name}`,
-          channelId: channel.id, // ID tạm (kênh nguồn không phải là kênh đích, nhưng dùng tạm để phân loại)
-          status: 'pending',
-          assigneeIds: [staffId],
-          dueDate: new Date().toISOString().split('T')[0],
-          videoType: 'long',
-          priority: 'high',
-          notes: `Nhiệm vụ: Cày view, phân tích video viral và lọc ý tưởng từ kênh nguồn này.\\nLink: ${channel.url}\\nGhi chú: ${channel.notes || 'Không có'}`,
-          isClaimable: false
-        });
-      });
-    });
-
     setSourceChannels(prev => prev.map(c => {
       if (selectedIds.includes(c.id)) {
         return { ...c, allowedStaffIds: Array.from(new Set([...(c.allowedStaffIds || []), ...bulkActionStaffIds])) };
@@ -139,11 +130,56 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
       return c;
     }));
     
-    // Cập nhật tasks list
-    setTasks(prev => [...prev, ...newTasks]);
+    // NOTE: Tính năng auto giao việc đã được tách ra để tránh SPAM bảng Task.
+    // Nếu cần giao việc, admin sẽ thao tác ở 1 chức năng riêng biệt.
 
-    showToast(`Đã cập nhật quyền xem và giao việc cho ${selectedIds.length} kênh.`, 'success');
+    showToast(`Đã cập nhật quyền xem cho ${selectedIds.length} kênh đối thủ.`, 'success');
     setIsBulkStaffModalOpen(false);
+    setSelectedIds([]);
+  };
+
+  const handleOpenAssignTask = (channelsToAssign: SourceChannel[]) => {
+    if (channelsToAssign.length === 0) return;
+    setAssignTaskChannelIds(channelsToAssign.map(c => c.id));
+    const channelNames = channelsToAssign.map(c => c.name).join(', ');
+    const channelUrls = channelsToAssign.map(c => c.url).join('\n');
+    setAssignTaskFormData({
+      title: channelsToAssign.length === 1 ? `[Khai thác Kênh đối thủ] ${channelsToAssign[0].name}` : `[Khai thác Bulk Kênh đối thủ]`,
+      description: `Yêu cầu khai thác nội dung của các kênh sau:\n${channelUrls}\n\nYêu cầu chi tiết:\n- ...`,
+      assigneeId: '',
+      deadline: new Date(Date.now() + 86400000).toISOString().split('T')[0] // Tomorrow
+    });
+    setIsAssignTaskModalOpen(true);
+  };
+
+  const handleCreateTaskSubmit = () => {
+    if (!assignTaskFormData.assigneeId || !assignTaskFormData.title) {
+      showToast('Vui lòng điền đủ Tiêu đề và Người thực hiện.', 'error');
+      return;
+    }
+    const newTasks: VideoTask[] = assignTaskChannelIds.map(channelId => {
+       const channel = sourceChannels.find(c => c.id === channelId);
+       return {
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          title: assignTaskFormData.title,
+          description: assignTaskFormData.description,
+          status: 'pending',
+          assigneeIds: [assignTaskFormData.assigneeId],
+          creatorId: currentUser?.id || 'admin',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          dueDate: assignTaskFormData.deadline || new Date().toISOString().split('T')[0],
+          tags: channel?.topicIds || [],
+          priority: 'high',
+          projectType: 'youtube',
+          channelId: channel?.id || 'source-channel',
+          notes: ''
+       };
+    });
+    setTasks(prev => [...newTasks, ...prev]);
+    showToast(`Đã tạo thành công ${newTasks.length} Task Khai thác kênh!`, 'success');
+    setIsAssignTaskModalOpen(false);
+    setAssignTaskChannelIds([]);
     setSelectedIds([]);
   };
 
@@ -256,10 +292,13 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           viralVideoTitle: topViral.title,
           viralVideoViews: topViral.viewCount || 0
         } : c));
-        showToast(`PHÁT HIỆN VIRAL! Video "${topViral.title}" đạt ${topViral.viewCount?.toLocaleString()} views.`, 'success');
+        showToast(`PHÁT HIỆN VIRAL! Video "${topViral.title}" đạt ${topViral.viewCount?.toLocaleString()} views.`, 'success', 10000);
+        
+        // Mở Modal Báo động VIRAL
+        setViralModalVideo({ channeledId: channel.id, channelName: channel.name, video: topViral });
       } else {
         setSourceChannels(prev => prev.map(c => c.id === channel.id ? { ...c, isViral: false } : c));
-        showToast('Không phát hiện video viral mới.', 'info');
+        showToast('Chưa phát hiện video nào có lượt xem vượt bậc.', 'info');
       }
     } catch (error) {
       showToast('Lỗi khi kiểm tra viral alert.', 'error');
@@ -268,6 +307,9 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
       setAnalyzingChannelId(null);
     }
   };
+
+  // State cho AI Content Gap
+  const [aiGapResult, setAiGapResult] = useState<{ channelName: string; content: string } | null>(null);
 
   const handleContentGapAnalysis = async (channel: SourceChannel) => {
     setIsAnalyzingGap(true);
@@ -284,10 +326,10 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
       const competitorContent = channel.topVideos?.map(v => v.title).join(', ') || channel.description;
       const myTopics = topics.map(t => t.name).join(', ');
 
-      const prompt = `Phân tích "Content Gap" giữa đối thủ và hệ thống của tôi. 
-      Nội dung đối thủ mạnh: ${competitorContent}. 
-      Chủ đề tôi đang làm: ${myTopics}. 
-      Hãy chỉ ra 3 ngách nội dung (content gap) mà đối thủ đang làm tốt nhưng tôi chưa khai thác hoặc có thể làm tốt hơn. Trả về 3 câu ngắn gọn.`;
+      const prompt = `Bạn là chuyên gia cố vấn chiến lược nội dung YouTube cho DTA Studio.
+      Kênh đối thủ: "${channel.name}". Nội dung mạnh của họ: ${competitorContent}. 
+      Chủ đề DTA đang làm: ${myTopics}. 
+      Yêu cầu: Chỉ ra ĐÚNG 3 "Content Gap" (Khoảng trống nội dung) mà DTA Studio có thể khai thác để đánh bại đối thủ này. Phân tích phải sắc bén, ngắn gọn, hành động được ngay.`;
 
       const response = await ai.models.generateContent({
         model,
@@ -296,11 +338,11 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
 
       const gapAnalysis = response.text || 'Không có dữ liệu phân tích.';
 
-      // Update notes with gap analysis
-      const updatedNotes = `${channel.notes || ''}\n\n--- CONTENT GAP ANALYSIS (${new Date().toLocaleDateString()}) ---\n${gapAnalysis}`;
-
-      setSourceChannels(prev => prev.map(c => c.id === channel.id ? { ...c, notes: updatedNotes } : c));
-      showToast('Đã hoàn thành phân tích Content Gap. Xem trong phần Ghi chú.', 'success');
+      setAiGapResult({
+        channelName: channel.name,
+        content: gapAnalysis
+      });
+      showToast('Đã phân tích xong Điểm Yếu/Khoảng trống nội dung!', 'success');
     } catch (error) {
       console.error('Gap Analysis Error:', error);
       showToast('Lỗi khi phân tích Content Gap.', 'error');
@@ -810,8 +852,43 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     return (b.subscribers || 0) - (a.subscribers || 0);
   });
 
+  // Tính toán Mini-Dashboard Radar
+  const totalSubscribers = sourceChannels.reduce((sum, c) => sum + (c.subscribers || 0), 0);
+  const totalViewsRadar = sourceChannels.reduce((sum, c) => sum + (c.totalViews || 0), 0);
+  const viralAlertsCount = sourceChannels.filter(c => c.isViral).length;
+
   return (
     <div className="space-y-6">
+      {/* Mini-Dashboard Radar Hệ sinh thái Đối thủ */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+           <div>
+             <p className="text-gray-500 text-sm font-medium">Tầm vóc Đối thủ</p>
+             <h4 className="text-2xl font-bold text-gray-900">{totalSubscribers >= 1000000 ? (totalSubscribers / 1000000).toFixed(1) + 'M' : totalSubscribers >= 1000 ? (totalSubscribers / 1000).toFixed(1) + 'K' : totalSubscribers}</h4>
+             <span className="text-xs text-blue-500 font-medium">Tổng Subscribers đang theo dõi</span>
+           </div>
+           <div className="p-3 bg-blue-50 rounded-lg text-blue-500"><Users size={24} /></div>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+           <div>
+             <p className="text-gray-500 text-sm font-medium">Lượng Traffic Khổng lồ</p>
+             <h4 className="text-2xl font-bold text-gray-900">{totalViewsRadar >= 1000000 ? (totalViewsRadar / 1000000).toFixed(1) + 'M' : totalViewsRadar >= 1000 ? (totalViewsRadar / 1000).toFixed(1) + 'K' : totalViewsRadar}</h4>
+             <span className="text-xs text-purple-500 font-medium">Tổng Lượt Views Tích lũy</span>
+           </div>
+           <div className="p-3 bg-purple-50 rounded-lg text-purple-500"><Eye size={24} /></div>
+        </div>
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-between">
+           <div>
+             <p className="text-gray-500 text-sm font-medium">Cảnh báo Trào lưu (Trend)</p>
+             <h4 className="text-2xl font-bold text-gray-900">{viralAlertsCount}</h4>
+             <span className="text-xs text-red-500 font-medium">Video mới đang Viral</span>
+           </div>
+           <div className={`p-3 rounded-lg ${viralAlertsCount > 0 ? 'bg-red-50 text-red-500 animate-pulse' : 'bg-gray-50 text-gray-400'}`}>
+             <AlertCircle size={24} />
+           </div>
+        </div>
+      </div>
+
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">
@@ -921,6 +998,9 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                 Phân Quyền Xem
               </button>
             )}
+            <button onClick={() => handleOpenAssignTask(sourceChannels.filter(c => selectedIds.includes(c.id)))} className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors flex items-center">
+              <ClipboardList size={14} className="mr-1" /> Giao Task
+            </button>
             {hasPermission('sources_edit') && (
               <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors">
                 Xóa {selectedIds.length} kênh
@@ -992,8 +1072,8 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                         <a href={channel.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-500 hover:underline flex items-center">
                           Link <ExternalLink size={10} className="ml-0.5" />
                         </a>
-                        <button onClick={() => setViewingChannel(channel)} className="text-[10px] text-gray-500 hover:text-red-500 flex items-center">
-                          Chi tiết <Eye size={10} className="ml-0.5" />
+                        <button onClick={() => setViewingChannel(channel)} className="text-[10px] text-gray-500 hover:text-red-500 flex items-center bg-gray-100 px-1.5 rounded">
+                          Xem kỹ <Eye size={10} className="ml-0.5" />
                         </button>
                       </div>
                     </div>
@@ -1100,8 +1180,24 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                       <Edit2 size={14} />
                     </button>
                   )}
-                  <button onClick={() => handleViralAlert(channel)} disabled={isCheckingViral && analyzingChannelId === channel.id} className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 rounded transition-colors" title="Check Viral">
-                    <AlertCircle size={14} />
+                  <button onClick={() => handleOpenAssignTask([channel])} className="p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600 rounded transition-colors" title="Giao Task khai thác kênh này">
+                    <ClipboardList size={14} />
+                  </button>
+                  <button 
+                    onClick={() => handleContentGapAnalysis(channel)} 
+                    disabled={isAnalyzingGap && analyzingChannelId === channel.id} 
+                    className={`p-1.5 rounded transition-colors ${isAnalyzingGap && analyzingChannelId === channel.id ? 'text-indigo-400 bg-indigo-50 animate-pulse' : 'text-gray-400 hover:bg-indigo-50 hover:text-indigo-600'}`} 
+                    title="AI Tìm Điểm Yếu (Content Gap)"
+                  >
+                    {isAnalyzingGap && analyzingChannelId === channel.id ? <RefreshCw size={14} className="animate-spin" /> : <BrainCircuit size={14} />}
+                  </button>
+                  <button 
+                    onClick={() => handleViralAlert(channel)} 
+                    disabled={isCheckingViral && analyzingChannelId === channel.id} 
+                    className={`p-1.5 rounded transition-colors ${channel.isViral ? 'text-red-600 bg-red-50 border border-red-200 shadow-sm' : 'text-gray-400 hover:bg-red-50 hover:text-red-500'}`} 
+                    title={channel.isViral ? `Phát hiện Viral: ${channel.viralVideoTitle}` : "Nút Radar: Check Viral Alert"}
+                  >
+                    <AlertCircle size={14} className={isCheckingViral && analyzingChannelId === channel.id ? "animate-spin" : ""} />
                   </button>
                   {hasPermission('sources_edit') && (
                     <button onClick={() => handleDelete(channel.id)} className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded transition-colors" title="Xoá kênh này">
@@ -1424,6 +1520,132 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             <div className="p-4 border-t border-gray-100 shrink-0 flex justify-end space-x-3 bg-gray-50">
               <button type="button" onClick={handleCloseModal} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors">Hủy</button>
               <button type="submit" form="source-form" className="px-4 py-2 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors">Lưu kênh nguồn</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Content Gap Modal */}
+      {aiGapResult && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+          <div className="bg-gray-900 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col border border-gray-800">
+            <div className="flex justify-between items-center p-5 border-b border-gray-800 bg-black/50">
+              <h2 className="text-lg font-bold text-green-400 flex items-center font-mono">
+                <BrainCircuit className="mr-2" size={20} /> AI TACTICAL ANALYSIS
+              </h2>
+              <button onClick={() => setAiGapResult(null)} className="text-gray-500 hover:text-white"><X size={20} /></button>
+            </div>
+            <div className="p-6 bg-gray-900">
+              <p className="text-xs text-gray-400 font-mono tracking-widest mb-4">TARGET: <span className="text-white">[{aiGapResult.channelName.toUpperCase()}]</span></p>
+              <div className="prose prose-sm max-w-none mb-6 whitespace-pre-wrap text-green-400 font-mono bg-black p-5 rounded-lg border border-green-900/30 shadow-inner leading-relaxed">
+                {aiGapResult.content.split('\n').map((line, i) => (
+                   <React.Fragment key={i}>
+                     {line.startsWith('*') || line.startsWith('-') || /^\d+\./.test(line) ? (
+                        <span className="text-yellow-400 font-bold">{line}</span>
+                     ) : (
+                        line
+                     )}
+                     <br/>
+                   </React.Fragment>
+                ))}
+              </div>
+              <div className="flex justify-end pt-2">
+                <button type="button" onClick={() => setAiGapResult(null)} className="px-6 py-2.5 font-mono text-sm font-bold text-black bg-green-500 hover:bg-green-400 rounded transition-colors uppercase tracking-widest">
+                  Acknowledge
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal Báo Động VIRAL */}
+      {viralModalVideo && (
+        <div className="fixed inset-0 bg-red-900/60 flex justify-center items-center z-[110] p-4 backdrop-blur-sm">
+          <div className="bg-red-50 border-2 border-red-500 rounded-xl shadow-[0_0_40px_rgba(239,68,68,0.6)] w-full max-w-lg overflow-hidden flex flex-col transform">
+            <div className="flex justify-between items-center bg-red-600 p-4 text-white">
+               <h2 className="text-xl font-bold flex items-center tracking-widest uppercase animate-pulse">
+                  <AlertCircle className="mr-2" size={24} /> BÁO ĐỘNG VIRAL!
+               </h2>
+               <button onClick={() => setViralModalVideo(null)} className="text-red-200 hover:text-white"><X size={24} /></button>
+            </div>
+            <div className="p-6 bg-white animate-fade-in-up">
+               <div className="text-center mb-4">
+                  <p className="text-red-600 font-bold mb-1 uppercase text-sm">Hệ thống phát hiện video Viral vượt bậc từ kênh</p>
+                  <p className="text-gray-900 font-black text-xl">[{viralModalVideo.channelName}]</p>
+               </div>
+               <div className="relative rounded-lg overflow-hidden shadow-lg border border-red-200 group">
+                  <img src={viralModalVideo.video.thumbnailUrl} alt="Thumbnail" className="w-full aspect-video object-cover" referrerPolicy="no-referrer" />
+                  <a href={`https://youtube.com/watch?v=${viralModalVideo.video.id}`} target="_blank" rel="noopener noreferrer" className="absolute inset-0 bg-red-600/0 group-hover:bg-red-600/20 transition-all flex items-center justify-center">
+                    <div className="bg-red-600 text-white rounded-full p-4 opacity-0 group-hover:opacity-100 transition-opacity transform scale-75 group-hover:scale-100 shadow-xl">
+                       <Youtube size={36} />
+                    </div>
+                  </a>
+               </div>
+               <div className="mt-4">
+                  <a href={`https://youtube.com/watch?v=${viralModalVideo.video.id}`} target="_blank" rel="noopener noreferrer" className="text-lg font-bold text-gray-900 hover:text-red-600 line-clamp-2 leading-tight">
+                    {viralModalVideo.video.title}
+                  </a>
+                  <div className="flex justify-between items-center mt-4 bg-red-50 p-4 rounded-lg border border-red-100">
+                     <div>
+                       <span className="text-red-500 font-semibold flex items-center text-xs uppercase tracking-wider mb-1"><Eye size={14} className="mr-1"/> Lượt Xem Khủng</span>
+                       <span className="text-3xl font-black text-red-600">{viralModalVideo.video.viewCount?.toLocaleString() || 'N/A'}</span>
+                     </div>
+                     <div className="text-right">
+                       <span className="text-gray-500 text-xs font-semibold uppercase tracking-wider block mb-1">Đăng ngày</span>
+                       <div className="font-bold text-gray-800 text-lg">{new Date(viralModalVideo.video.publishedAt).toLocaleDateString('vi-VN')}</div>
+                     </div>
+                  </div>
+               </div>
+               <div className="mt-6 flex gap-3">
+                 <button onClick={() => setViralModalVideo(null)} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-bold transition-colors">Bỏ qua</button>
+                 <a href={`https://youtube.com/watch?v=${viralModalVideo.video.id}`} target="_blank" rel="noopener noreferrer" className="flex-1 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold flex justify-center items-center shadow-lg hover:shadow-red-500/50 transition-all">
+                   <Video size={18} className="mr-2" /> Xem video gốc
+                 </a>
+               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Giao Task Khai Thác Kênh */}
+      {isAssignTaskModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[110] p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b border-gray-100 bg-green-50">
+              <h2 className="text-lg font-bold flex items-center text-green-800">
+                <ClipboardList className="mr-2" size={20} /> Giao Task Khai Thác ({assignTaskChannelIds.length} kênh)
+              </h2>
+              <button onClick={() => setIsAssignTaskModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Tiêu đề công việc *</label>
+                 <input type="text" value={assignTaskFormData.title} onChange={e => setAssignTaskFormData({...assignTaskFormData, title: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500" placeholder="[Khai thác kênh] ..." />
+              </div>
+              <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Người thực hiện *</label>
+                 <select value={assignTaskFormData.assigneeId} onChange={e => setAssignTaskFormData({...assignTaskFormData, assigneeId: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white">
+                    <option value="">-- Chọn nhân sự phụ trách --</option>
+                    {staffList.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                    ))}
+                 </select>
+              </div>
+              <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Thời hạn (Deadline)</label>
+                 <input type="date" value={assignTaskFormData.deadline} onChange={e => setAssignTaskFormData({...assignTaskFormData, deadline: e.target.value})} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500" />
+              </div>
+              <div>
+                 <label className="block text-sm font-medium text-gray-700 mb-1">Yêu cầu giao việc chi tiết</label>
+                 <textarea value={assignTaskFormData.description} onChange={e => setAssignTaskFormData({...assignTaskFormData, description: e.target.value})} rows={6} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm max-h-48"></textarea>
+                 <p className="text-xs text-gray-500 mt-1">Hệ thống sẽ tạo ra {assignTaskChannelIds.length} Task độc lập nếu bạn chọn nhiều kênh.</p>
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end space-x-3 bg-gray-50">
+              <button onClick={() => setIsAssignTaskModalOpen(false)} className="px-4 py-2 font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg shadow-sm">Hủy</button>
+              <button onClick={handleCreateTaskSubmit} className="px-4 py-2 font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-sm flex items-center">
+                <Check size={16} className="mr-1" /> Phát hành Task
+              </button>
             </div>
           </div>
         </div>

@@ -20,8 +20,8 @@ export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand,
 
   return (
     <div 
-      className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col transition-all hover:shadow-md"
-      style={{ borderTop: `4px solid ${topic.color}` }}
+      className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md"
+      style={{ border: `2px solid ${topic.color}`, borderTopWidth: '6px' }}
     >
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">

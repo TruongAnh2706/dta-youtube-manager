@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Channel, SourceChannel, Topic } from '../types';
-import { Search, Lightbulb, ArrowRight, Activity, Target, Star } from 'lucide-react';
+import { Channel, SourceChannel, Topic, Staff, VideoTask } from '../types';
+import { Search, Lightbulb, ArrowRight, Activity, Target, Star, X, Plus } from 'lucide-react';
 import { performDeepAnalysis } from '../services/aiService';
 
 interface AnalysisProps {
@@ -8,14 +8,29 @@ interface AnalysisProps {
   sourceChannels: SourceChannel[];
   topics: Topic[];
   geminiApiKey?: string;
+  currentUser?: Staff | { role: string; name: string; id: string } | null;
+  staffList?: Staff[];
+  tasks?: VideoTask[];
+  setTasks?: React.Dispatch<React.SetStateAction<VideoTask[]>>;
 }
 
-export function Analysis({ channels, sourceChannels, topics, geminiApiKey }: AnalysisProps) {
+export function Analysis({ channels, sourceChannels, topics, geminiApiKey, currentUser, staffList = [], tasks = [], setTasks }: AnalysisProps) {
   const [selectedTopic, setSelectedTopic] = useState<string>(topics[0]?.id || '');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string[]>([]);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskIdea, setTaskIdea] = useState('');
+  const [assignedStaff, setAssignedStaff] = useState<string>('');
+
+  const canUseAI = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'leader';
+  const isMember = currentUser?.role === 'member';
 
   const handleAnalyze = async () => {
+    if (!canUseAI) {
+      alert("Tài khoản Member chỉ được phép xem dữ liệu, không có quyền gọi AI Phân tích.");
+      return;
+    }
+
     if (!selectedTopic) return;
     
     if (!geminiApiKey) {
@@ -31,7 +46,7 @@ export function Analysis({ channels, sourceChannels, topics, geminiApiKey }: Ana
       const ourChannels = channels.filter(c => (c.topicIds || []).includes(selectedTopic));
       const topicSources = sourceChannels.filter(c => (c.topicIds || []).includes(selectedTopic));
       
-      const results = await performDeepAnalysis(topicName, ourChannels, topicSources, geminiApiKey);
+      const results = await performDeepAnalysis(topicName, ourChannels, topicSources, geminiApiKey, staffList.length);
       setAnalysisResult(results);
     } catch (error) {
       console.error("Lỗi phân tích:", error);
@@ -39,6 +54,29 @@ export function Analysis({ channels, sourceChannels, topics, geminiApiKey }: Ana
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  const handleCreateQuickTask = () => {
+    if (!taskIdea.trim() || !assignedStaff || !setTasks) {
+      alert("Vui lòng nhập nội dung và chọn nhân sự thực hiện");
+      return;
+    }
+
+    const newTask: VideoTask = {
+      id: Date.now().toString(),
+      title: `[Chiến lược AI] ${taskIdea}`,
+      status: 'pending',
+      assigneeIds: [assignedStaff],
+      dueDate: new Date().toISOString(),
+      priority: 'high',
+      channelId: channels[0]?.id || '', // Gan tam cho kenh dau tien, hoac bo trong
+      notes: ''
+    };
+
+    setTasks(prev => [...prev, newTask]);
+    alert("Đã tạo Task thành công! Bạn có thể xem task ở tab Lịch Đăng & KPI.");
+    setShowTaskModal(false);
+    setTaskIdea('');
   };
 
   const topicChannels = channels.filter(c => (c.topicIds || []).includes(selectedTopic));
@@ -64,17 +102,20 @@ export function Analysis({ channels, sourceChannels, topics, geminiApiKey }: Ana
             ))}
             {topics.length === 0 && <option value="">Chưa có chủ đề nào</option>}
           </select>
-          <button 
-            onClick={handleAnalyze}
-            disabled={!selectedTopic || isAnalyzing}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center"
-          >
-            {isAnalyzing ? (
-              <span className="flex items-center"><Activity className="animate-spin mr-2" size={18} /> Đang phân tích...</span>
-            ) : (
-              <span className="flex items-center"><Search className="mr-2" size={18} /> Phân tích ngay</span>
-            )}
-          </button>
+          <div className="flex flex-col flex-1 items-end gap-2">
+            <button 
+              onClick={handleAnalyze}
+              disabled={!selectedTopic || isAnalyzing || isMember}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center h-full w-[240px] justify-center"
+            >
+              {isAnalyzing ? (
+                <span className="flex items-center"><Activity className="animate-spin mr-2" size={18} /> Đang phân tích...</span>
+              ) : (
+                <span className="flex items-center"><Search className="mr-2" size={18} /> Phân tích ngay {isMember && "(Khóa)"}</span>
+              )}
+            </button>
+            {isMember && <span className="text-xs text-red-500 font-medium">* Chỉ Leader/Quản lý mới có quyền gọi AI Phân tích</span>}
+          </div>
         </div>
       </div>
 
@@ -132,7 +173,13 @@ export function Analysis({ channels, sourceChannels, topics, geminiApiKey }: Ana
                   <div className="mt-6 pt-6 border-t border-indigo-200/50">
                     <p className="text-sm text-indigo-600 font-medium mb-3">Hành động tiếp theo:</p>
                     <div className="flex gap-3">
-                      <button className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
+                      <button 
+                        onClick={() => {
+                           setTaskIdea(analysisResult[0] || ''); // Lấy ý tưởng đầu tiên làm mồi
+                           setShowTaskModal(true);
+                        }}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                      >
                         Tạo Task cho Nhân sự
                       </button>
                       <button className="bg-white text-indigo-700 border border-indigo-200 px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-50 transition-colors">
@@ -147,6 +194,64 @@ export function Analysis({ channels, sourceChannels, topics, geminiApiKey }: Ana
                   <p>Nhấn "Phân tích ngay" để hệ thống tổng hợp dữ liệu</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Quick Task */}
+      {showTaskModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                <Plus size={20} className="mr-2 text-indigo-500" />
+                Dịch AI Result thành Giao Việc
+              </h3>
+              <button onClick={() => setShowTaskModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nội dung Task (AI Gợi ý)</label>
+                <textarea
+                  value={taskIdea}
+                  onChange={(e) => setTaskIdea(e.target.value)}
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border min-h-[100px]"
+                  placeholder="Ghi ngắn gọn nội dung cần nhân sự phải làm..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Giao cho nhân sự</label>
+                <select
+                  value={assignedStaff}
+                  onChange={(e) => setAssignedStaff(e.target.value)}
+                  className="w-full border-gray-300 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2 border"
+                >
+                  <option value="">-- Chọn nhân sự --</option>
+                  {staffList.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.role})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+              <button 
+                onClick={() => setShowTaskModal(false)}
+                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                onClick={handleCreateQuickTask}
+                className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg"
+              >
+                Tạo Task Ngay
+              </button>
             </div>
           </div>
         </div>

@@ -127,7 +127,7 @@ export function Topics({ topics = [], setTopics, staffList }: TopicsProps) {
               <span>{niche}</span>
               <span className="text-sm font-medium bg-gray-100 text-gray-500 px-3 py-1 rounded-full">{nicheTopics.length} chủ đề</span>
             </h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {nicheTopics.map(topic => (
                 <TopicCard
                   key={topic.id}

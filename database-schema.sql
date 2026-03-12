@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS video_tasks (
   best_publish_time TEXT,
   is_claimable BOOLEAN DEFAULT FALSE,
   comments JSONB DEFAULT '[]'::jsonb,
+  time_tracking JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

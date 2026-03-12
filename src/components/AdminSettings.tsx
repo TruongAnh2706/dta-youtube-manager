@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { SystemSettings, ApiKey } from '../types';
+import { SystemSettings, ApiKey, CustomStatus } from '../types';
 import { 
   Plus, Trash2, Key, Youtube, Sparkles, Save, AlertCircle, 
-  CheckCircle2, RefreshCw, ShieldCheck, Database, ShieldAlert
+  CheckCircle2, RefreshCw, ShieldCheck, Database, ShieldAlert, SlidersHorizontal
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
@@ -18,6 +18,24 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
   const [newKey, setNewKey] = useState('');
   const [newKeyProvider, setNewKeyProvider] = useState<'youtube' | 'gemini'>('youtube');
   const [newKeyNote, setNewKeyNote] = useState('');
+
+  // Status Management
+  const [newStatusType, setNewStatusType] = useState<'emailStatuses' | 'taskStatuses'>('emailStatuses');
+  const [newStatusLabel, setNewStatusLabel] = useState('');
+  const [newStatusId, setNewStatusId] = useState('');
+  const [newStatusColor, setNewStatusColor] = useState('bg-gray-100 text-gray-700');
+
+  const COLORS = [
+    { id: 'gray', class: 'bg-gray-100 text-gray-700', label: 'Xám sáng' },
+    { id: 'blue', class: 'bg-blue-100 text-blue-700', label: 'Xanh dương' },
+    { id: 'green', class: 'bg-green-100 text-green-700', label: 'Xanh lá' },
+    { id: 'yellow', class: 'bg-yellow-100 text-yellow-700', label: 'Vàng' },
+    { id: 'red', class: 'bg-red-100 text-red-700', label: 'Đỏ' },
+    { id: 'purple', class: 'bg-purple-100 text-purple-700', label: 'Tím' },
+    { id: 'orange', class: 'bg-orange-100 text-orange-700', label: 'Cam' },
+    { id: 'indigo', class: 'bg-indigo-100 text-indigo-700', label: 'Chàm' },
+    { id: 'dark', class: 'bg-gray-800 text-white border border-gray-700', label: 'Đen nhám' },
+  ];
 
   const handleAddKey = () => {
     if (!newKey.trim()) return;
@@ -79,6 +97,46 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
       setSettings(prev => ({ ...prev, youtubeApiKeys: updateKey(prev.youtubeApiKeys) }));
     } else {
       setSettings(prev => ({ ...prev, geminiApiKeys: updateKey(prev.geminiApiKeys) }));
+    }
+  };
+
+  const handleAddStatus = () => {
+    if (!newStatusLabel.trim()) return;
+    const sId = newStatusId.trim() || newStatusLabel.trim().toLowerCase().replace(/\s+/g, '_');
+    
+    // Check if duplicate ID exists
+    const existingList = settings[newStatusType] || [];
+    if (existingList.some(s => s.id === sId)) {
+      showToast('ID trạng thái đã tồn tại!', 'error');
+      return;
+    }
+
+    const newObj: CustomStatus = {
+      id: sId,
+      label: newStatusLabel.trim(),
+      color: newStatusColor
+    };
+
+    setSettings(prev => ({
+      ...prev,
+      [newStatusType]: [...(prev[newStatusType] || []), newObj]
+    }));
+
+    setNewStatusLabel('');
+    setNewStatusId('');
+    showToast('Đã thêm Trạng thái thành công!', 'success');
+  };
+
+  const handleDeleteStatus = (id: string, type: 'emailStatuses' | 'taskStatuses') => {
+    if (confirm('Lưu ý: Nếu xóa, các luồng đang dùng trạng thái này có thể bị hiển thị sai chữ. Bạn có chắc muốn XÓA?')) {
+      setSettings(prev => {
+        const list = prev[type] || [];
+        return {
+          ...prev,
+          [type]: list.filter(s => s.id !== id)
+        };
+      });
+      showToast('Đã xóa trạng thái.', 'info');
     }
   };
 
@@ -316,6 +374,122 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Dynamic Status Section */}
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <SlidersHorizontal className="mr-2 text-indigo-500" size={20} /> Tùy chỉnh Trạng thái (Dynamic Status)
+        </h2>
+        
+        {hasPermission('settings_edit_permissions') ? (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 bg-indigo-50/50 p-4 rounded-lg border border-indigo-100">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Loại trạng thái</label>
+                <select 
+                  value={newStatusType}
+                  onChange={e => setNewStatusType(e.target.value as any)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                >
+                  <option value="emailStatuses">Quản lý Email thô</option>
+                  <option value="taskStatuses">Quản lý Bảng Công việc (Task)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tên hiển thị (Label)</label>
+                <input 
+                  type="text" 
+                  value={newStatusLabel}
+                  onChange={e => setNewStatusLabel(e.target.value)}
+                  placeholder="VD: Bị khóa mõm"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Màu sắc (Badge Color)</label>
+                <select 
+                  value={newStatusColor}
+                  onChange={e => setNewStatusColor(e.target.value)}
+                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium ${newStatusColor}`}
+                >
+                  {COLORS.map(c => (
+                    <option key={c.id} value={c.class} className={c.class}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button 
+                  onClick={handleAddStatus}
+                  disabled={!newStatusLabel.trim()}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center"
+                >
+                  <Plus size={16} className="mr-2" /> Thêm Mới
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Email Statuses */}
+              <div className="border border-gray-100 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 font-medium text-sm text-gray-700 flex justify-between items-center">
+                  Danh sách Trạng thái Email thô
+                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs">{(settings?.emailStatuses || []).length}</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {(settings?.emailStatuses || []).map(status => (
+                    <div key={status.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                      <div className="flex items-center">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${status.color}`}>
+                          {status.label}
+                        </span>
+                        <span className="ml-3 text-xs text-gray-400 font-mono">ID: {status.id}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleDeleteStatus(status.id, 'emailStatuses')}
+                        className="text-gray-400 hover:text-red-600 p-1"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Task Statuses */}
+              <div className="border border-gray-100 rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b border-gray-100 font-medium text-sm text-gray-700 flex justify-between items-center">
+                  Danh sách Trạng thái Công việc (Task)
+                  <span className="bg-gray-200 text-gray-700 py-0.5 px-2 rounded-full text-xs">{(settings?.taskStatuses || []).length}</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {(settings?.taskStatuses || []).map(status => (
+                    <div key={status.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                      <div className="flex items-center">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap ${status.color}`}>
+                          {status.label}
+                        </span>
+                        <span className="ml-3 text-xs text-gray-400 font-mono">ID: {status.id}</span>
+                      </div>
+                      <button 
+                        onClick={() => handleDeleteStatus(status.id, 'taskStatuses')}
+                        className="text-gray-400 hover:text-red-600 p-1"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+          </div>
+        ) : (
+          <div className="bg-gray-50 p-6 rounded-xl border border-dashed border-gray-300 flex flex-col items-center justify-center text-center">
+            <ShieldAlert size={32} className="text-gray-300 mb-2" />
+            <p className="text-sm text-gray-500">Chỉ Admin mới có quyền cấu hình hệ thống trạng thái động.</p>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -102,7 +102,8 @@ export async function performDeepAnalysis(
   topicName: string,
   ourChannels: any[],
   sourceChannels: any[],
-  apiKey: string
+  apiKey: string,
+  staffCount: number = 0
 ): Promise<string[]> {
   if (!apiKey) {
     throw new Error("Gemini API Key chưa được cấu hình.");
@@ -111,7 +112,7 @@ export async function performDeepAnalysis(
   const ai = new GoogleGenAI({ apiKey });
 
   const prompt = `
-    Bạn là một chuyên gia chiến lược nội dung YouTube. Hãy phân tích dữ liệu sau về chủ đề "${topicName}" và đưa ra 5 nhận định/đề xuất chiến lược sắc bén.
+    Bạn là chuyên gia chiến lược nội dung YouTube. Hãy phân tích dữ liệu sau về chủ đề "${topicName}" và đưa ra 5 ý tưởng/nhiệm vụ chiến lược cụ thể để giao cho nhân sự ngay lập tức.
 
     Dữ liệu kênh của chúng ta:
     ${ourChannels.map(c => `- ${c.name}: ${c.subscribers} subs`).join('\n')}
@@ -119,12 +120,14 @@ export async function performDeepAnalysis(
     Dữ liệu kênh nguồn/đối thủ tham khảo:
     ${sourceChannels.map(c => `- ${c.name}: ~${c.averageViews} views/video, Rating: ${c.rating}/5`).join('\n')}
 
+    Nguồn lực hiện tại: ${staffCount} nhân sự trực tuyến/sẵn sàng.
+    
     Yêu cầu:
-    1. Phân tích xu hướng dựa trên tên các kênh và số liệu.
-    2. Đề xuất ngách nội dung cụ thể có tiềm năng tăng trưởng cao.
-    3. Gợi ý định dạng video (Shorts hay Long-form) và phong cách thể hiện.
-    4. Nhận diện cơ hội cạnh tranh.
-    5. Trả về một mảng JSON chứa 5 chuỗi văn bản (string), mỗi chuỗi là một nhận định/đề xuất. Không có markdown formatting.
+    1. Đưa ra các ý tưởng nhiệm vụ (actionable tasks) cụ thể để nhân viên có thể làm theo (VD: "Phân tích 3 video viral nhất của kênh X và lên kịch bản shorts tương tự").
+    2. Gợi ý cụ thể định dạng (Long-form/Shorts) khai thác nhược điểm đối thủ.
+    3. Hạn chế lý thuyết suông, tập trung vào thực thi cho đội Video/Content.
+    4. Trả về mảng JSON chứa 5 chuỗi văn bản, mỗi chuỗi là 1 lời khuyên/hành động dài khoảng 1-2 câu.
+    5. TUYỆT ĐỐI không dùng định dạng markdown, chỉ trả JSON.
   `;
 
   const response = await ai.models.generateContent({

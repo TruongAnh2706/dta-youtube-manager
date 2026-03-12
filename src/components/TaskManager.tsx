@@ -4,11 +4,13 @@ import {
   Briefcase, CheckCircle2, Clock, MessageSquare,
   UserPlus, Send, ClipboardCheck, BarChart3,
   Search, Filter, AlertCircle, CheckCircle,
-  PlayCircle, FileText, Calendar, User, Plus, X, Link as LinkIcon
+  PlayCircle, FileText, Calendar, User, Plus, X, Link as LinkIcon,
+  LayoutGrid, Kanban
 } from 'lucide-react';
 import { format, isToday, parseISO } from 'date-fns';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
+import { supabase } from '../lib/supabase';
 
 interface TaskManagerProps {
   tasks: VideoTask[];
@@ -19,11 +21,12 @@ interface TaskManagerProps {
   currentUser: { id: string; name: string; role: string } | null;
   dailyReports: DailyReport[];
   setDailyReports: React.Dispatch<React.SetStateAction<DailyReport[]>>;
+  systemSettings?: import('../types').SystemSettings;
 }
 
 export function TaskManager({
   tasks, setTasks, staffList, channels, assets, currentUser,
-  dailyReports, setDailyReports
+  dailyReports, setDailyReports, systemSettings
 }: TaskManagerProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
@@ -31,6 +34,9 @@ export function TaskManager({
     (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'leader') ? 'all-tasks' : 'my-tasks'
   );
   const [reportNotes, setReportNotes] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'board'>('grid');
+  const [taskCommentModal, setTaskCommentModal] = useState<string | null>(null);
+  const [newCommentText, setNewCommentText] = useState('');
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskFormData, setTaskFormData] = useState<Partial<VideoTask>>({
     title: '',
@@ -59,7 +65,44 @@ export function TaskManager({
     });
   };
 
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    e.dataTransfer.setData('taskId', taskId);
+  };
+  
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+  
+  const handleDrop = (e: React.DragEvent, newStatus: TaskStatus) => {
+    e.preventDefault();
+    const taskId = e.dataTransfer.getData('taskId');
+    if (taskId) {
+      handleUpdateStatus(taskId, newStatus);
+    }
+  };
+
+  const handleAddComment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!taskCommentModal || !newCommentText.trim() || !currentUser) return;
+
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskCommentModal) {
+        const newComment = {
+          id: Date.now().toString(),
+          userId: currentUser.id,
+          userName: currentUser.name,
+          text: newCommentText.trim(),
+          timestamp: new Date().toISOString()
+        };
+        return { ...t, comments: [...(t.comments || []), newComment] };
+      }
+      return t;
+    }));
+    setNewCommentText('');
+  };
+
   const isManager = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'leader';
+  const workflowSteps = systemSettings?.taskStatuses || [];
 
   const currentStaff = useMemo(() =>
     staffList.find(s => s.name === currentUser?.name || s.id === currentUser?.id),
@@ -97,18 +140,29 @@ export function TaskManager({
     showToast(`Đã cập nhật trạng thái sang: ${newStatus}`, 'info');
   };
 
-  const handleDeleteTask = (taskId: string) => {
+  const handleDeleteTask = async (taskId: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa công việc này? Thao tác này không thể hoàn tác.')) {
       setTasks(prev => prev.filter(t => t.id !== taskId));
       showToast('Đã xóa công việc thành công!', 'info');
+      try {
+        await supabase.from('video_tasks').delete().eq('id', taskId);
+      } catch (error) {
+        console.error('Error deleting task:', error);
+      }
     }
   };
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (window.confirm(`Bạn có chắc muốn xóa ${selectedTaskIds.length} công việc đã chọn?`)) {
-      setTasks(prev => prev.filter(t => !selectedTaskIds.includes(t.id)));
+      const idsToDelete = [...selectedTaskIds];
+      setTasks(prev => prev.filter(t => !idsToDelete.includes(t.id)));
       setSelectedTaskIds([]);
-      showToast(`Đã xóa ${selectedTaskIds.length} công việc!`, 'info');
+      showToast(`Đã xóa ${idsToDelete.length} công việc!`, 'info');
+      try {
+        await supabase.from('video_tasks').delete().in('id', idsToDelete);
+      } catch (error) {
+        console.error('Error bulk deleting tasks:', error);
+      }
     }
   };
 
@@ -116,6 +170,64 @@ export function TaskManager({
     setTasks(prev => prev.map(t => selectedTaskIds.includes(t.id) ? { ...t, status: newStatus } : t));
     setSelectedTaskIds([]);
     showToast(`Đã chuyển trạng thái ${selectedTaskIds.length} việc thành công!`, 'success');
+  };
+
+  const isTaskOverdue = (task: VideoTask) => {
+    const lastStepId = workflowSteps.length > 0 ? workflowSteps[workflowSteps.length - 1].id : 'published';
+    return task.status !== lastStepId && task.dueDate < format(new Date(), 'yyyy-MM-dd');
+  };
+
+  const dashboardMetrics = useMemo(() => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const lastStepId = workflowSteps.length > 0 ? workflowSteps[workflowSteps.length - 1].id : 'published';
+    const overdue = myTasks.filter(t => isTaskOverdue(t)).length;
+    const inProgress = myTasks.filter(t => t.status !== 'pending' && t.status !== lastStepId).length;
+    const completedToday = myTasks.filter(t => t.status === lastStepId && t.dueDate === today).length;
+    const totalToday = myTasks.filter(t => t.dueDate === today).length;
+    return { overdue, inProgress, completedToday, totalToday };
+  }, [myTasks, workflowSteps]);
+
+  const toggleTimeTracking = (taskId: string) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        const tracking = t.timeTracking || { totalSeconds: 0, isRunning: false };
+        if (tracking.isRunning) {
+          const startTime = tracking.lastStartTime ? new Date(tracking.lastStartTime).getTime() : Date.now();
+          const elapsed = Math.floor((Date.now() - startTime) / 1000);
+          return {
+            ...t,
+            timeTracking: {
+              ...tracking,
+              isRunning: false,
+              totalSeconds: tracking.totalSeconds + elapsed,
+              lastStartTime: undefined
+            }
+          };
+        } else {
+          return {
+            ...t,
+            timeTracking: {
+              ...tracking,
+              isRunning: true,
+              lastStartTime: new Date().toISOString()
+            }
+          };
+        }
+      }
+      return t;
+    }));
+  };
+
+  const formatTaskTime = (tracking?: { totalSeconds: number, isRunning: boolean, lastStartTime?: string }) => {
+    if (!tracking) return '0h 0m';
+    let total = tracking.totalSeconds;
+    if (tracking.isRunning && tracking.lastStartTime) {
+      const startTime = new Date(tracking.lastStartTime).getTime();
+      total += Math.floor((Date.now() - startTime) / 1000);
+    }
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    return `${h > 0 ? h + 'h ' : ''}${m}m`;
   };
 
   const displayedTasks = useMemo(() => {
@@ -145,8 +257,15 @@ export function TaskManager({
         return true;
       });
     }
-    return list;
-  }, [tasks, myTasks, activeTab, filterStaff, filterStatus, filterCategory]);
+
+    return list.sort((a, b) => {
+      const aOverdue = isTaskOverdue(a);
+      const bOverdue = isTaskOverdue(b);
+      if (aOverdue && !bOverdue) return -1;
+      if (!aOverdue && bOverdue) return 1;
+      return 0;
+    });
+  }, [tasks, myTasks, activeTab, filterStaff, filterStatus, filterCategory, workflowSteps]);
 
   const handleSubmitReport = (e: React.FormEvent) => {
     e.preventDefault();
@@ -216,13 +335,7 @@ export function TaskManager({
     setTaskCategory('video');
   };
 
-  const workflowSteps: { id: TaskStatus; label: string; color: string }[] = [
-    { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-    { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-    { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700 border-green-200' },
-    { id: 'review', label: 'Chờ duyệt', color: 'bg-orange-100 text-orange-700 border-orange-200' },
-    { id: 'published', label: 'Đã hoàn tất', color: 'bg-teal-100 text-teal-700 border-teal-200' }
-  ];
+  
 
   return (
     <div className="space-y-6">
@@ -277,10 +390,53 @@ export function TaskManager({
       {/* BỘ LỌC VÀ THAO TÁC HÀNG LOẠT */}
       {(activeTab === 'my-tasks' || activeTab === 'all-tasks') && (
         <div className="space-y-4">
-          {/* Header Filters */}
+          
+          {/* Mini Dashboard cho Việc Của Tôi */}
+          {activeTab === 'my-tasks' && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div className="bg-red-50 p-4 rounded-xl border border-red-100 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 opacity-20"><AlertCircle size={48} className="text-red-500" /></div>
+                <p className="text-red-600 text-sm font-bold uppercase mb-1 relative z-10">Cần xử lý ngay</p>
+                <div className="flex items-end space-x-2 relative z-10">
+                  <span className="text-3xl font-black text-red-700 leading-none">{dashboardMetrics.overdue}</span>
+                  <span className="text-red-600/80 text-xs font-semibold pb-1">việc quá hạn</span>
+                </div>
+              </div>
+              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 opacity-20"><Clock size={48} className="text-blue-500" /></div>
+                <p className="text-blue-600 text-sm font-bold uppercase mb-1 relative z-10">Đang thực hiện</p>
+                <div className="flex items-end space-x-2 relative z-10">
+                  <span className="text-3xl font-black text-blue-700 leading-none">{dashboardMetrics.inProgress}</span>
+                  <span className="text-blue-600/80 text-xs font-semibold pb-1">việc trên tay</span>
+                </div>
+              </div>
+              <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 opacity-20"><CheckCircle2 size={48} className="text-emerald-500" /></div>
+                <p className="text-emerald-600 text-sm font-bold uppercase mb-1 relative z-10">Đã xong hôm nay</p>
+                <div className="flex items-end space-x-2 relative z-10">
+                  <span className="text-3xl font-black text-emerald-700 leading-none">{dashboardMetrics.completedToday}</span>
+                  <span className="text-emerald-600/80 text-xs font-semibold pb-1">/ {dashboardMetrics.totalToday} hạn hôm nay</span>
+                </div>
+              </div>
+              <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 shadow-sm flex flex-col justify-center items-center text-center">
+                <p className="text-amber-700 text-sm font-bold mb-2">Thông báo mới</p>
+                <span className="text-amber-800 text-xs truncate w-full px-2 italic">Chưa có thông báo nào.</span>
+                <button className="text-[10px] text-amber-600 font-bold uppercase mt-2 hover:underline">Xem tất cả</button>
+              </div>
+            </div>
+          )}
+
           {/* Header Filters */}
           <div className="flex flex-col md:flex-row gap-3 bg-white p-3 rounded-xl shadow-sm border border-gray-100 items-center justify-between">
             <div className="flex flex-wrap items-center gap-3">
+              <div className="flex bg-gray-100 p-1 rounded-lg mr-2 shrink-0">
+                <button onClick={() => setViewMode('grid')} className={`px-2.5 py-1.5 rounded-md flex items-center text-xs font-bold transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <LayoutGrid size={14} className="mr-1" /> Lưới
+                </button>
+                <button onClick={() => setViewMode('board')} className={`px-2.5 py-1.5 rounded-md flex items-center text-xs font-bold transition-all ${viewMode === 'board' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                  <Kanban size={14} className="mr-1" /> Bảng
+                </button>
+              </div>
               <div className="flex items-center text-gray-500 px-2 shrink-0">
                 <Filter size={18} className="mr-2" /> Lọc việc:
               </div>
@@ -367,6 +523,7 @@ export function TaskManager({
           )}
 
           {/* Dàn GRID hiển thị Task */}
+          {viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {displayedTasks.length > 0 ? (
               displayedTasks.map((task, index) => {
@@ -389,8 +546,11 @@ export function TaskManager({
               const isHighPriority = task.priority === 'high';
               const isChannelSetup = displayCategory === 'Khởi tạo kênh' || displayCategory.includes('Mail') || displayCategory.includes('Khai thác');
               const isOffice = displayCategory === 'Hành chính';
+              const overdue = isTaskOverdue(task);
               
-              const borderStyles = isHighPriority 
+              const borderStyles = overdue
+                ? 'border-2 border-red-500 bg-red-50 ring-4 ring-red-500/20'
+                : isHighPriority 
                 ? 'border-l-4 border-l-red-500 border-y border-r border-red-200 bg-red-50/20' 
                 : isChannelSetup 
                   ? 'border-l-4 border-l-indigo-500 border-y border-r border-gray-200 bg-white' 
@@ -443,9 +603,24 @@ export function TaskManager({
                               {displayCategory}
                             </span>
                           )}
-                          {isHighPriority && (
+                          {overdue && (
                             <span className="flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-red-600 text-white animate-pulse">
-                              <AlertCircle size={10} className="mr-1" /> Ưu tiên cao
+                              <AlertCircle size={10} className="mr-1" /> Chậm tiến độ
+                            </span>
+                          )}
+                          {isHighPriority && !overdue && (
+                            <span className="flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-200">
+                              <AlertCircle size={10} className="mr-1" /> P1 Cao
+                            </span>
+                          )}
+                          {task.priority === 'medium' && !overdue && (
+                            <span className="flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-800 border border-amber-200">
+                              P2 TB
+                            </span>
+                          )}
+                          {task.priority === 'low' && !overdue && (
+                            <span className="flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase bg-gray-100 text-gray-600 border border-gray-200">
+                              P3 Thấp
                             </span>
                           )}
                         </div>
@@ -507,17 +682,40 @@ export function TaskManager({
                       ))}
                     </div>
                     
-                    {/* Delete button (only for managers or creators ideally, but checking manager role here since permissions vary) */}
-                    {hasPermission('tasks_edit') && (
+                    {/* Actions right */}
+                    <div className="flex items-center gap-2">
                       <button 
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="flex items-center text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors border border-red-100 placeholder:shrink-0"
-                        title="Xóa công việc này"
+                        onClick={() => setTaskCommentModal(task.id)}
+                        className="flex items-center text-gray-500 hover:text-blue-600 bg-gray-50 hover:bg-blue-50 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors border border-gray-100 placeholder:shrink-0"
+                        title="Bình luận"
                       >
-                        Xóa việc
+                        <MessageSquare size={12} className="mr-1" /> {(task.comments || []).length}
                       </button>
-                    )}
-                  </div>
+                        {hasPermission('tasks_edit') && (
+                          <button 
+                            onClick={() => handleDeleteTask(task.id)}
+                            className="flex items-center text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-colors border border-red-100 placeholder:shrink-0"
+                            title="Xóa công việc này"
+                          >
+                            Xóa việc
+                          </button>
+                        )}
+                      </div>
+                      <div className="w-full flex justify-end mt-2 md:mt-0 md:w-auto">
+                        <button
+                          onClick={() => toggleTimeTracking(task.id)}
+                          className={`flex items-center px-2 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+                            task.timeTracking?.isRunning 
+                              ? 'bg-rose-100 text-rose-700 border-rose-300 animate-pulse shadow-inner' 
+                              : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                          }`}
+                        >
+                          <Clock size={12} className={`mr-1.5 ${task.timeTracking?.isRunning ? 'animate-spin-slow' : ''}`} />
+                          {task.timeTracking?.isRunning ? 'Đang đo...' : 'Tính giờ'}
+                          <span className="ml-1.5 px-1 bg-white/50 rounded">{formatTaskTime(task.timeTracking)}</span>
+                        </button>
+                      </div>
+                    </div>
                 </div>
               );
             })
@@ -538,6 +736,83 @@ export function TaskManager({
               </div>
             )}
           </div>
+          ) : (
+            /* Board View */
+            <div className="flex overflow-x-auto space-x-4 pb-6 items-start min-h-[70vh] custom-scrollbar">
+              {workflowSteps.map(step => {
+                const colTasks = displayedTasks.filter(t => t.status === step.id);
+                return (
+                  <div 
+                    key={step.id} 
+                    className="bg-gray-100 rounded-xl p-3 w-[min(100%,320px)] shrink-0 border border-gray-200 flex flex-col max-h-[70vh]"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, step.id)}
+                  >
+                    <div className="flex justify-between items-center mb-3 px-1 sticky top-0 bg-gray-100 z-10 py-1">
+                      <h3 className={`font-bold text-sm ${step.color?.includes('text-') ? step.color.split(' ').find(c => c.startsWith('text-')) : 'text-gray-700'}`}>{step.label}</h3>
+                      <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full text-xs font-bold">{colTasks.length}</span>
+                    </div>
+                    <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 pb-2 px-1">
+                      {colTasks.length === 0 ? (
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg h-20 flex items-center justify-center text-xs text-gray-400">
+                          Thả công việc vào đây
+                        </div>
+                      ) : (
+                        colTasks.map((task, index) => {
+                          const assignedStaffArr = (task.assigneeIds || []).map(id => staffList.find(s => s.id === id)).filter(Boolean);
+                          const overdue = isTaskOverdue(task);
+                          const isHighPriority = task.priority === 'high';
+                          
+                          let category = '';
+                          let pureTitle = task.title;
+                          if (pureTitle.startsWith('[')) {
+                            const closeIdx = pureTitle.indexOf(']');
+                            if (closeIdx !== -1) {
+                              category = pureTitle.substring(1, closeIdx);
+                              pureTitle = pureTitle.substring(closeIdx + 1).trim();
+                            }
+                          }
+
+                          return (
+                            <div 
+                              key={task.id} 
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, task.id)}
+                              className={`p-3 rounded-lg shadow-sm border bg-white cursor-grab hover:shadow-md transition-all active:cursor-grabbing relative overflow-hidden ${overdue ? 'border-red-500 ring-2 ring-red-500/50' : isHighPriority ? 'border-l-4 border-l-red-500' : 'border-gray-200'}`}
+                            >
+                              <div className="flex justify-between items-start mb-2 gap-2">
+                                <h4 className="text-sm font-bold text-gray-900 leading-snug">{pureTitle}</h4>
+                                {overdue && <AlertCircle size={14} className="text-red-500 shrink-0" />}
+                              </div>
+                              {category && <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded mb-2 uppercase ${overdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{category}</span>}
+                              
+                              <div className="flex justify-between items-end mt-2">
+                                <div className="flex -space-x-1.5 overflow-hidden">
+                                  {assignedStaffArr.map(s => (
+                                    <div key={s?.id} title={s?.name} className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold border-2 border-white">
+                                      {s?.name?.charAt(0)}
+                                    </div>
+                                  ))}
+                                  {assignedStaffArr.length === 0 && (
+                                    <div className="w-6 h-6 rounded-full border-2 border-dashed border-gray-300 text-gray-400 flex items-center justify-center text-[10px]">?</div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => setTaskCommentModal(task.id)} className="flex items-center text-gray-500 hover:text-blue-600 text-xs bg-gray-50 px-1.5 py-0.5 rounded">
+                                    <MessageSquare size={12} className="mr-1" /> {(task.comments || []).length}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -843,6 +1118,68 @@ export function TaskManager({
                 <Send size={18} className="mr-2" /> Giao việc ngay
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Task Comment Modal */}
+      {taskCommentModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-end sm:items-center justify-center z-[60] p-0 sm:p-4">
+          <div className="bg-white rounded-t-xl sm:rounded-xl shadow-2xl w-full max-w-md h-[80vh] sm:h-[600px] flex flex-col animate-in slide-in-from-bottom-5">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 sm:rounded-t-xl shrink-0">
+              <h3 className="font-bold text-gray-900 flex items-center">
+                <MessageSquare size={18} className="mr-2 text-blue-600" /> Bình luận nội bộ
+              </h3>
+              <button title="Đóng" onClick={() => setTaskCommentModal(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-gray-50/50">
+              {tasks.find(t => t.id === taskCommentModal)?.comments?.length ? (
+                tasks.find(t => t.id === taskCommentModal)?.comments?.map(comment => {
+                  const isMe = comment.userId === currentUser?.id;
+                  return (
+                    <div key={comment.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      {!isMe && (
+                        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs mr-2 shrink-0 mt-auto shadow-sm">
+                          {comment.userName.charAt(0)}
+                        </div>
+                      )}
+                      <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm ${isMe ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white border border-gray-100 text-gray-800 rounded-bl-sm'}`}>
+                        {!isMe && <div className="text-[10px] font-bold text-gray-500 mb-0.5">{comment.userName}</div>}
+                        <p className="whitespace-pre-wrap leading-relaxed">{comment.text}</p>
+                        <div className={`text-[9px] mt-1 text-right ${isMe ? 'text-blue-200' : 'text-gray-400'}`}>
+                          {format(new Date(comment.timestamp), 'HH:mm dd/MM/yyyy')}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-2">
+                  <MessageSquare size={48} className="text-gray-200" />
+                  <p className="text-sm">Chưa có bình luận nào.</p>
+                </div>
+              )}
+            </div>
+            
+            <form onSubmit={handleAddComment} className="p-3 bg-white border-t border-gray-100 shrink-0 sm:rounded-b-xl flex gap-2">
+              <input 
+                type="text"
+                autoFocus
+                value={newCommentText}
+                onChange={(e) => setNewCommentText(e.target.value)}
+                placeholder="Nhập bình luận để trao đổi..."
+                className="flex-1 px-4 py-2.5 bg-gray-100 border-transparent focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 rounded-full text-sm transition-all outline-none"
+              />
+              <button 
+                type="submit"
+                disabled={!newCommentText.trim()}
+                className="w-10 h-10 bg-blue-600 text-white rounded-full flex items-center justify-center hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors shrink-0 shadow-sm"
+              >
+                <Send size={16} className="ml-0.5" />
+              </button>
+            </form>
           </div>
         </div>
       )}

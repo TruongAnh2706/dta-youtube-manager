@@ -126,9 +126,7 @@ export type Staff = {
   };
 };
 
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'idea' | 'script' | 'voiceover' | 'editing' | 'review' | 'published';
-
-export type VideoTask = {
+export type TaskStatus = string;export type VideoTask = {
   id: string;
   title: string;
   channelId: string;
@@ -154,6 +152,11 @@ export type VideoTask = {
     text: string;
     timestamp: string;
   }[];
+  timeTracking?: {
+    totalSeconds: number;
+    isRunning: boolean;
+    lastStartTime?: string;
+  };
 };
 
 export type DailyReport = {
@@ -274,7 +277,7 @@ export type ManagedEmail = {
   twoFactorAuth?: string;
   verificationPhone?: string;
   assignedTo?: string | null; // staff ID
-  status: 'new' | 'aging' | 'creating' | 'active' | 'error';
+  status: string; // Dynamic status from SystemSettings
   notes?: string;
   createdAt?: string;
   targetTopicIds?: string[]; // (Optional) Gán sẵn định hướng kênh sẽ làm chủ đề gì
@@ -320,12 +323,20 @@ export type TrainingDoc = {
   author: string;
 };
 
+export type CustomStatus = {
+  id: string;
+  label: string;
+  color: string; // Tailwind class string, e.g., 'bg-red-100 text-red-700'
+};
+
 export type SystemSettings = {
   youtubeApiKeys: ApiKey[];
   geminiApiKeys: ApiKey[];
   activeYoutubeKeyIndex: number;
   auditLogs: AuditLog[];
   trainingDocs: TrainingDoc[];
+  emailStatuses?: CustomStatus[];
+  taskStatuses?: CustomStatus[];
 };
 
 

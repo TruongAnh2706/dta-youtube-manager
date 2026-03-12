@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { 
   Search, Plus, Upload, Download, Trash2, Edit2, ShieldAlert,
-  Save, X, FileDown, CheckCircle2, Clock, AlertTriangle, PlayCircle, Eye, EyeOff
+  Save, X, FileDown, CheckCircle2, Clock, AlertTriangle, PlayCircle, Eye, EyeOff, Copy
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { ManagedEmail, Staff, Topic, VideoTask } from '../types';
@@ -17,9 +17,10 @@ interface EmailManagerProps {
   currentUser: { id: string, role: string, name: string } | null;
   tasks: VideoTask[];
   setTasks: React.Dispatch<React.SetStateAction<VideoTask[]>>;
+  systemSettings?: import('../types').SystemSettings;
 }
 
-export function EmailManager({ emails, setEmails, staffList, topics, currentUser, tasks, setTasks }: EmailManagerProps) {
+export function EmailManager({ emails, setEmails, staffList, topics, currentUser, tasks, setTasks, systemSettings }: EmailManagerProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
@@ -63,12 +64,37 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     setIsModalOpen(true);
   };
 
+  const handleCopy = (text: string, type: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    showToast(`Đã sao chép ${type}`, 'info');
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.email) return;
 
     if (editingEmail) {
+      const isNewlyAssigned = formData.assignedTo && formData.assignedTo !== editingEmail.assignedTo;
+      
       setEmails(prev => prev.map(em => em.id === editingEmail.id ? { ...em, ...formData, assignedTo: formData.assignedTo || null } as ManagedEmail : em));
+      
+      if (isNewlyAssigned) {
+        const newTask: VideoTask = {
+          id: `task_${Date.now()}`,
+          title: `[Khởi tạo kênh] Email: ${formData.email}`,
+          channelId: editingEmail.id,
+          status: 'pending',
+          assigneeIds: [formData.assignedTo],
+          dueDate: new Date().toISOString().split('T')[0],
+          videoType: 'long',
+          priority: 'medium',
+          notes: `Tiến hành ngâm và lập kênh cho email: ${formData.email} \nPass: ${formData.password} \nKhôi phục: ${formData.recoveryEmail}\nXác minh SĐT: ${formData.verificationPhone}\nKênh dự kiến: ${formData.channelCode}`,
+          isClaimable: false
+        };
+        setTasks(prev => [...prev, newTask]);
+      }
+      
       showToast('Cập nhật email thành công', 'success');
     } else {
       const isExist = emails.some(em => em.email.toLowerCase() === formData.email.toLowerCase());
@@ -84,6 +110,23 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
         createdAt: new Date().toISOString()
       };
       setEmails(prev => [newEmail, ...prev]);
+
+      if (formData.assignedTo) {
+        const newTask: VideoTask = {
+          id: `task_${Date.now()}`,
+          title: `[Khởi tạo kênh] Email: ${formData.email}`,
+          channelId: newEmail.id,
+          status: 'pending',
+          assigneeIds: [formData.assignedTo],
+          dueDate: new Date().toISOString().split('T')[0],
+          videoType: 'long',
+          priority: 'medium',
+          notes: `Tiến hành ngâm và lập kênh cho email: ${formData.email} \nPass: ${formData.password} \nKhôi phục: ${formData.recoveryEmail}\nXác minh SĐT: ${formData.verificationPhone}\nKênh dự kiến: ${formData.channelCode}`,
+          isClaimable: false
+        };
+        setTasks(prev => [...prev, newTask]);
+      }
+
       showToast('Thêm email thành công', 'success');
     }
     setIsModalOpen(false);
@@ -108,7 +151,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     }
   };
 
-  const handleBulkStatusChange = (newStatus: 'new' | 'creating' | 'active' | 'error') => {
+  const handleBulkStatusChange = (newStatus: string) => {
     setEmails(prev => prev.map(em => selectedIds.includes(em.id) ? { ...em, status: newStatus } : em));
     showToast(`Đã cập nhật trạng thái ${selectedIds.length} email`, 'success');
     setSelectedIds([]);
@@ -146,11 +189,8 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     if (selectedData.length === 0) return;
 
     const exportData = selectedData.map(em => {
-      let statusText = 'Mới lấy về';
-      if (em.status === 'aging') statusText = 'Đang ngâm';
-      else if (em.status === 'creating') statusText = 'Đang lập kênh';
-      else if (em.status === 'active') statusText = 'Đã lập xong kênh';
-      else if (em.status === 'error') statusText = 'Lỗi/Die';
+      const statusObj = systemSettings?.emailStatuses?.find(s => s.id === em.status);
+      const statusText = statusObj ? statusObj.label : em.status;
 
       const topicNames = em.targetTopicIds?.map(tid => topics.find(t => t.id === tid)?.name).filter(Boolean).join(', ') || '';
 
@@ -224,13 +264,10 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
             topicIds = topics.filter(t => topicNames.includes(t.name)).map(t => t.id);
           }
 
-          let statusVal: 'new' | 'aging' | 'creating' | 'active' | 'error' = 'new';
+          let statusVal: string = 'new';
           const rawStatus = String(row['Trạng thái'] || '').toLowerCase();
-          if (rawStatus.includes('mới lấy về') || rawStatus === 'new') statusVal = 'new';
-          else if (rawStatus.includes('đang ngâm') || rawStatus === 'aging') statusVal = 'aging';
-          else if (rawStatus.includes('đang lập') || rawStatus === 'creating') statusVal = 'creating';
-          else if (rawStatus.includes('đã lập') || rawStatus === 'active') statusVal = 'active';
-          else if (rawStatus.includes('lỗi') || rawStatus.includes('die') || rawStatus === 'error') statusVal = 'error';
+          const matchedStatus = systemSettings?.emailStatuses?.find(s => rawStatus.includes(s.label.toLowerCase()) || rawStatus === s.id.toLowerCase());
+          if (matchedStatus) statusVal = matchedStatus.id;
 
           newEmails.push({
             id: `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -280,14 +317,9 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
   });
 
   const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'new': return <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium flex items-center"><Clock size={12} className="mr-1"/> Mới lấy về</span>;
-      case 'aging': return <span className="px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-medium flex items-center"><Clock size={12} className="mr-1"/> Đang ngâm</span>;
-      case 'creating': return <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium flex items-center"><PlayCircle size={12} className="mr-1"/> Đang lập kênh</span>;
-      case 'active': return <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium flex items-center"><CheckCircle2 size={12} className="mr-1"/> Đã lập xong kênh</span>;
-      case 'error': return <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium flex items-center"><AlertTriangle size={12} className="mr-1"/> Lỗi/Die</span>;
-      default: return null;
-    }
+    const s = systemSettings?.emailStatuses?.find(st => st.id === status);
+    if (!s) return <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium border border-gray-200">{status}</span>;
+    return <span className={`px-2 py-1 rounded-full text-xs font-medium border border-gray-200/50 flex items-center w-fit ${s.color}`}><Clock size={12} className="mr-1"/> {s.label}</span>;
   };
 
   return (
@@ -328,11 +360,9 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
         </div>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
           <option value="all">Tất cả trạng thái</option>
-          <option value="new">Mới lấy về</option>
-          <option value="aging">Đang ngâm</option>
-          <option value="creating">Đang lập kênh</option>
-          <option value="active">Đã lập xong kênh</option>
-          <option value="error">Lỗi/Die</option>
+          {(systemSettings?.emailStatuses || []).map(s => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
         </select>
         {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
           <select value={filterStaff} onChange={e => setFilterStaff(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
@@ -357,13 +387,11 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
               <option value="">-- Hủy giao việc --</option>
               {staffList.filter(s => s.role !== 'admin').map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-            <select className="px-3 py-1.5 border border-gray-300 rounded text-sm bg-white" onChange={(e) => { if (e.target.value) handleBulkStatusChange(e.target.value as any); e.target.value = ''; }}>
+            <select className="px-3 py-1.5 border border-gray-300 rounded text-sm bg-white" onChange={(e) => { if (e.target.value) handleBulkStatusChange(e.target.value); e.target.value = ''; }}>
               <option value="">-- Đổi trạng thái --</option>
-              <option value="new">Mới lấy về</option>
-              <option value="aging">Đang ngâm</option>
-              <option value="creating">Đang lập kênh</option>
-              <option value="active">Đã lập xong kênh</option>
-              <option value="error">Lỗi/Die</option>
+              {(systemSettings?.emailStatuses || []).map(s => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
             </select>
             <button onClick={handleBulkExport} className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors flex items-center">
               <Download size={14} className="mr-1.5" /> Xuất Excel
@@ -434,23 +462,59 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                       )}
                     </td>
                     <td className="p-3">
-                      <div className="flex items-center text-xs font-mono bg-gray-50 px-2 py-1 rounded w-fit group mb-1 border border-gray-100">
-                        <span className="mr-2 text-gray-700">
-                          Pass: <span className="font-semibold text-blue-700">{isPasswordVisible ? (email.password || '---') : '••••••••'}</span>
-                        </span>
-                        <button 
-                          onClick={() => setShowPasswords(prev => ({...prev, [email.id]: !prev[email.id]}))}
-                          className="text-gray-400 hover:text-gray-600 md:opacity-0 md:group-hover:opacity-100 transition-opacity"
-                        >
-                          {isPasswordVisible ? <EyeOff size={12} /> : <Eye size={12} />}
-                        </button>
-                      </div>
-                      {(email.recoveryEmail || !!email.twoFactorAuth) && (
-                        <div className="text-[11px] text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
-                          {email.recoveryEmail && <span>KP: {email.recoveryEmail}</span>}
-                          {email.twoFactorAuth && <span>2FA: {isPasswordVisible ? <span className="font-mono text-gray-700">{email.twoFactorAuth}</span> : '••••••••'}</span>}
+                      <div className="flex flex-col gap-1.5 min-w-[180px]">
+                        <div className="flex items-center text-xs font-mono bg-gray-50 px-2 py-1 rounded-md w-fit group border border-gray-100">
+                          <span className="mr-2 text-gray-700 min-w-[36px]">Pass:</span>
+                          <span className="font-semibold text-blue-700 select-all">{isPasswordVisible ? (email.password || '---') : '••••••••'}</span>
+                          <div className="ml-2 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => setShowPasswords(prev => ({...prev, [email.id]: !prev[email.id]}))}
+                              className="text-gray-400 hover:text-blue-600 focus:outline-none"
+                              title={isPasswordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                            >
+                              {isPasswordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                            {email.password && (
+                              <button 
+                                onClick={() => handleCopy(email.password, 'mật khẩu')}
+                                className="text-gray-400 hover:text-blue-600 focus:outline-none"
+                                title="Sao chép mật khẩu"
+                              >
+                                <Copy size={13} />
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      )}
+
+                        {(email.recoveryEmail || !!email.twoFactorAuth) && (
+                          <div className="flex flex-col gap-1 text-[11px] text-gray-500">
+                            {email.recoveryEmail && (
+                              <div className="flex items-center">
+                                <span className="min-w-[36px]">KP:</span>
+                                <span className="select-all text-gray-600">{email.recoveryEmail}</span>
+                                <button onClick={() => handleCopy(email.recoveryEmail, 'email khôi phục')} className="ml-1.5 text-gray-400 hover:text-blue-600">
+                                   <Copy size={11} />
+                                </button>
+                              </div>
+                            )}
+                            {email.twoFactorAuth && (
+                              <div className="flex items-center group/2fa w-fit">
+                                <span className="min-w-[36px]">2FA:</span>
+                                <span className="font-mono text-gray-700 select-all">{isPasswordVisible ? email.twoFactorAuth : '••••••••'}</span>
+                                {isPasswordVisible && (
+                                   <button 
+                                     onClick={() => handleCopy(email.twoFactorAuth, 'mã 2FA')}
+                                     className="ml-2 md:opacity-0 md:group-hover/2fa:opacity-100 transition-opacity text-gray-400 hover:text-blue-600"
+                                     title="Sao chép mã 2FA"
+                                   >
+                                     <Copy size={11} />
+                                   </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="p-3">
                       {staff ? (
@@ -535,12 +599,10 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Trạng thái setup kênh</label>
-                    <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value as any })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                      <option value="new">Mới lấy về</option>
-                      <option value="aging">Đang ngâm</option>
-                      <option value="creating">Đang lập kênh</option>
-                      <option value="active">Đã lập xong kênh</option>
-                      <option value="error">Lỗi / Checkpoint / Die</option>
+                    <select value={formData.status} onChange={e => setFormData({ ...formData, status: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      {(systemSettings?.emailStatuses || []).map(s => (
+                        <option key={s.id} value={s.id}>{s.label}</option>
+                      ))}
                     </select>
                   </div>
                   

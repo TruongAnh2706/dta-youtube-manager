@@ -28,7 +28,21 @@ export function useAppData(currentUser: any) {
         geminiApiKeys: [],
         activeYoutubeKeyIndex: 0,
         auditLogs: [],
-        trainingDocs: []
+        trainingDocs: [],
+        emailStatuses: [
+            { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
+            { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
+            { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
+            { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
+            { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
+        ],
+        taskStatuses: [
+            { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
+            { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
+            { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
+            { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
+            { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
+        ]
     });
 
     // Get active YouTube API Key
@@ -107,7 +121,24 @@ export function useAppData(currentUser: any) {
             case 'competitors': setCompetitors(updatedData); break;
             case 'managed_emails': setManagedEmails(updatedData); break;
             case 'system_settings':
-                if (updatedData.length > 0) setSystemSettings(updatedData[0]);
+                if (updatedData.length > 0) {
+                    const parsed = updatedData[0];
+                    if (!parsed.emailStatuses) parsed.emailStatuses = [
+                        { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
+                        { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
+                        { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
+                        { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
+                        { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
+                    ];
+                    if (!parsed.taskStatuses) parsed.taskStatuses = [
+                        { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
+                        { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
+                        { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
+                        { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
+                        { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
+                    ];
+                    setSystemSettings(parsed);
+                }
                 break;
         }
     };
@@ -159,7 +190,22 @@ export function useAppData(currentUser: any) {
                 if (emailsRes.data) setManagedEmails(toCamelCase(emailsRes.data));
 
                 if (settingsRes.data && settingsRes.data.length > 0) {
-                    setSystemSettings(toCamelCase(settingsRes.data[0]) as any);
+                    const parsedSettings = toCamelCase(settingsRes.data[0]) as any;
+                    if (!parsedSettings.emailStatuses) parsedSettings.emailStatuses = [
+                        { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
+                        { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
+                        { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
+                        { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
+                        { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
+                    ];
+                    if (!parsedSettings.taskStatuses) parsedSettings.taskStatuses = [
+                        { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
+                        { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
+                        { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
+                        { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
+                        { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
+                    ];
+                    setSystemSettings(parsedSettings);
                 }
 
                 console.log('✅ Supabase Load Complete!');
