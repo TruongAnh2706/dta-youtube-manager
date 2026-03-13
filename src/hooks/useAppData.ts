@@ -148,46 +148,21 @@ export function useAppData(currentUser: any) {
 
         const fetchSupabaseData = async () => {
             try {
-                console.log('🔄 Đang kéo dữ liệu từ Supabase...');
+                console.log('🔄 Đang kéo dữ liệu cốt lõi (Wave 1)...');
+                
+                // WAVE 1: Dữ liệu quan trọng cần để build UI khung
                 const [
-                    channelsRes, topicsRes, staffRes, sourceChannelsRes,
-                    tasksRes, financialsRes, transactionsRes, accountsRes,
-                    categoriesRes, strikesRes, assetsRes, proxiesRes,
-                    licensesRes, competitorsRes, emailsRes, settingsRes
+                    settingsRes, staffRes, channelsRes, topicsRes, 
+                    sourceChannelsRes, accountsRes, categoriesRes
                 ] = await Promise.all([
+                    supabase.from('system_settings').select('*'),
+                    supabase.from('staff_list').select('*'),
                     supabase.from('channels').select('*'),
                     supabase.from('topics').select('*'),
-                    supabase.from('staff_list').select('*'),
                     supabase.from('source_channels').select('*'),
-                    supabase.from('video_tasks').select('*'),
-                    supabase.from('financials').select('*'),
-                    supabase.from('transactions').select('*'),
                     supabase.from('financial_accounts').select('*'),
-                    supabase.from('transaction_categories').select('*'),
-                    supabase.from('strikes').select('*'),
-                    supabase.from('assets').select('*'),
-                    supabase.from('proxies').select('*'),
-                    supabase.from('licenses').select('*'),
-                    supabase.from('competitors').select('*'),
-                    supabase.from('managed_emails').select('*'),
-                    supabase.from('system_settings').select('*')
+                    supabase.from('transaction_categories').select('*')
                 ]);
-
-                if (channelsRes.data) setChannels(toCamelCase(channelsRes.data));
-                if (topicsRes.data) setTopics(toCamelCase(topicsRes.data));
-                if (staffRes.data) setStaffList(toCamelCase(staffRes.data));
-                if (sourceChannelsRes.data) setSourceChannels(toCamelCase(sourceChannelsRes.data));
-                if (tasksRes.data) setTasks(toCamelCase(tasksRes.data));
-                if (financialsRes.data) setFinancials(toCamelCase(financialsRes.data));
-                if (transactionsRes.data) setTransactions(toCamelCase(transactionsRes.data));
-                if (accountsRes.data) setAccounts(toCamelCase(accountsRes.data));
-                if (categoriesRes.data) setCategories(toCamelCase(categoriesRes.data));
-                if (strikesRes.data) setStrikes(toCamelCase(strikesRes.data));
-                if (assetsRes.data) setAssets(toCamelCase(assetsRes.data));
-                if (proxiesRes.data) setProxies(toCamelCase(proxiesRes.data));
-                if (licensesRes.data) setLicenses(toCamelCase(licensesRes.data));
-                if (competitorsRes.data) setCompetitors(toCamelCase(competitorsRes.data));
-                if (emailsRes.data) setManagedEmails(toCamelCase(emailsRes.data));
 
                 if (settingsRes.data && settingsRes.data.length > 0) {
                     const parsedSettings = toCamelCase(settingsRes.data[0]) as any;
@@ -207,8 +182,49 @@ export function useAppData(currentUser: any) {
                     ];
                     setSystemSettings(parsedSettings);
                 }
+                if (staffRes.data) setStaffList(toCamelCase(staffRes.data));
+                if (channelsRes.data) setChannels(toCamelCase(channelsRes.data));
+                if (topicsRes.data) setTopics(toCamelCase(topicsRes.data));
+                if (sourceChannelsRes.data) setSourceChannels(toCamelCase(sourceChannelsRes.data));
+                if (accountsRes.data) setAccounts(toCamelCase(accountsRes.data));
+                if (categoriesRes.data) setCategories(toCamelCase(categoriesRes.data));
 
-                console.log('✅ Supabase Load Complete!');
+                console.log('✅ Wave 1 Xong. Đang tải dữ liệu Tab phụ (Wave 2)...');
+                
+                // WAVE 2: Chạy background để không chặn UI render
+                setTimeout(async () => {
+                    try {
+                        const [
+                            tasksRes, financialsRes, transactionsRes, strikesRes, 
+                            assetsRes, proxiesRes, licensesRes, competitorsRes, emailsRes
+                        ] = await Promise.all([
+                            supabase.from('video_tasks').select('*').limit(300), // Phân trang đơn giản cho các bảng nặng
+                            supabase.from('financials').select('*').limit(300),
+                            supabase.from('transactions').select('*').limit(300),
+                            supabase.from('strikes').select('*'),
+                            supabase.from('assets').select('*').limit(300),
+                            supabase.from('proxies').select('*'),
+                            supabase.from('licenses').select('*'),
+                            supabase.from('competitors').select('*'),
+                            supabase.from('managed_emails').select('*').limit(400)
+                        ]);
+
+                        if (tasksRes.data) setTasks(toCamelCase(tasksRes.data));
+                        if (financialsRes.data) setFinancials(toCamelCase(financialsRes.data));
+                        if (transactionsRes.data) setTransactions(toCamelCase(transactionsRes.data));
+                        if (strikesRes.data) setStrikes(toCamelCase(strikesRes.data));
+                        if (assetsRes.data) setAssets(toCamelCase(assetsRes.data));
+                        if (proxiesRes.data) setProxies(toCamelCase(proxiesRes.data));
+                        if (licensesRes.data) setLicenses(toCamelCase(licensesRes.data));
+                        if (competitorsRes.data) setCompetitors(toCamelCase(competitorsRes.data));
+                        if (emailsRes.data) setManagedEmails(toCamelCase(emailsRes.data));
+                        
+                        console.log('✅ Wave 2 Load Complete!');
+                    } catch (err) {
+                        console.error('❌ Supabase Wave 2 Error:', err);
+                    }
+                }, 100);
+
             } catch (err) {
                 console.error('❌ Supabase Init Error:', err);
             }

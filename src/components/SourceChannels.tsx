@@ -1512,6 +1512,35 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quyền xem kênh (Nhân sự)</label>
+                  <p className="text-xs text-gray-500 mb-2">Chỉ những nhân sự được chọn (và Admin) mới thấy kênh này.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {staffList?.map(staff => (
+                      <button
+                        key={staff.id}
+                        type="button"
+                        onClick={() => {
+                          const currentIds = formData.allowedStaffIds || [];
+                          setFormData({
+                            ...formData,
+                            allowedStaffIds: currentIds.includes(staff.id)
+                              ? currentIds.filter(id => id !== staff.id)
+                              : [...currentIds, staff.id]
+                          });
+                        }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                          (formData.allowedStaffIds || []).includes(staff.id)
+                            ? 'border-orange-500 bg-orange-50 text-orange-700'
+                            : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        {staff.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú / Điểm mạnh của kênh này</label>
                   <textarea value={formData.notes} onChange={e => setFormData({ ...formData, notes: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500" rows={3} placeholder="VD: Kênh này làm thumbnail rất đẹp, content dễ re-up..." />
                 </div>

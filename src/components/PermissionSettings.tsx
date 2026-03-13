@@ -31,6 +31,13 @@ const PERMISSION_GROUPS: { group: string; permissions: { key: PermissionKey; lab
     ]
   },
   {
+    group: 'Kênh & Email thô (Raw)',
+    permissions: [
+      { key: 'emails_view', label: 'Xem Email Raw', description: 'Xem danh sách các email thô chưa lập kênh' },
+      { key: 'emails_edit', label: 'Quản lý Email Raw', description: 'Thêm, sửa trạng thái, giao việc lập kênh' },
+    ]
+  },
+  {
     group: 'Quản lý Kênh (Channels)',
     permissions: [
       { key: 'channels_view', label: 'Xem danh sách kênh', description: 'Xem thông tin cơ bản các kênh đang quản lý' },
@@ -95,11 +102,11 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
   admin: PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)),
   manager: [
     'dashboard_view', 'topics_view', 'topics_edit', 'sources_view', 'sources_edit', 'sources_analyze',
-    'channels_view', 'channels_edit', 'staff_view', 'calendar_view', 'calendar_edit', 'calendar_view_all',
+    'channels_view', 'channels_edit', 'emails_view', 'emails_edit', 'staff_view', 'calendar_view', 'calendar_edit', 'calendar_view_all',
     'finance_view', 'finance_edit', 'copyright_view', 'assets_view', 'assets_edit', 'tasks_view', 'tasks_edit', 'tasks_claim', 'settings_view'
   ],
   leader: [
-    'dashboard_view', 'topics_view', 'sources_view', 'channels_view', 'calendar_view', 'calendar_edit', 
+    'dashboard_view', 'topics_view', 'sources_view', 'channels_view', 'emails_view', 'calendar_view', 'calendar_edit', 
     'calendar_view_all', 'copyright_view', 'assets_view', 'tasks_view', 'tasks_edit', 'tasks_claim'
   ],
   member: [
