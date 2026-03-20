@@ -23,6 +23,7 @@ export function useAppData(currentUser: any) {
     const [licenses, setLicenses] = useState<License[]>([]);
     const [competitors, setCompetitors] = useState<Competitor[]>([]);
     const [managedEmails, setManagedEmails] = useState<ManagedEmail[]>([]);
+    const [isDataLoaded, setIsDataLoaded] = useState(false);
     const [systemSettings, setSystemSettings] = useState<SystemSettings>({
         youtubeApiKeys: [],
         geminiApiKeys: [],
@@ -64,7 +65,7 @@ export function useAppData(currentUser: any) {
 
     // Automatically seed default admin if the loaded staffList is still empty
     useEffect(() => {
-        if (staffList.length === 0) {
+        if (isDataLoaded && staffList.length === 0) {
             setStaffList([{
                 id: "dta_admin_01",
                 name: "Đức Trường (CEO)",
@@ -198,15 +199,15 @@ export function useAppData(currentUser: any) {
                             tasksRes, financialsRes, transactionsRes, strikesRes, 
                             assetsRes, proxiesRes, licensesRes, competitorsRes, emailsRes
                         ] = await Promise.all([
-                            supabase.from('video_tasks').select('*').limit(300), // Phân trang đơn giản cho các bảng nặng
-                            supabase.from('financials').select('*').limit(300),
-                            supabase.from('transactions').select('*').limit(300),
+                            supabase.from('video_tasks').select('*').limit(5000), // Phân trang đơn giản cho các bảng nặng
+                            supabase.from('financials').select('*').limit(5000),
+                            supabase.from('transactions').select('*').limit(5000),
                             supabase.from('strikes').select('*'),
-                            supabase.from('assets').select('*').limit(300),
+                            supabase.from('assets').select('*').limit(5000),
                             supabase.from('proxies').select('*'),
                             supabase.from('licenses').select('*'),
                             supabase.from('competitors').select('*'),
-                            supabase.from('managed_emails').select('*').limit(400)
+                            supabase.from('managed_emails').select('*').limit(5000)
                         ]);
 
                         if (tasksRes.data) setTasks(toCamelCase(tasksRes.data));
@@ -219,6 +220,7 @@ export function useAppData(currentUser: any) {
                         if (competitorsRes.data) setCompetitors(toCamelCase(competitorsRes.data));
                         if (emailsRes.data) setManagedEmails(toCamelCase(emailsRes.data));
                         
+                        setIsDataLoaded(true);
                         console.log('✅ Wave 2 Load Complete!');
                     } catch (err) {
                         console.error('❌ Supabase Wave 2 Error:', err);

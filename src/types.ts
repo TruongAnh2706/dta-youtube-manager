@@ -38,7 +38,7 @@ export type Channel = {
   subscribers: number;
   totalViews?: number;
   topicIds: string[];
-  status: 'active' | 'inactive' | 'suspended';
+  status: 'active' | 'inactive' | 'suspended' | 'dead';
   healthStatus?: 'healthy' | 'warning' | 'danger';
   healthNotes?: string;
   lastHealthCheck?: string;
@@ -85,6 +85,7 @@ export type SourceChannel = {
   viralVideoViews?: number;
   notes: string;
   allowedStaffIds?: string[]; // Mảng ID của những nhân viên được phép xem, admin mặc định full quyền
+  status?: 'active' | 'dead';
 };
 
 export type StaffRole = 'admin' | 'manager' | 'leader' | 'member';

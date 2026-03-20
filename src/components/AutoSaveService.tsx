@@ -61,22 +61,53 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
                 if (!hasChanged) continue;
 
                 try {
-                    const formattedData = toSnakeCase(currentData);
-                    // Rất quan trọng: Nếu user xóa hết item, mảng sẽ rỗng -> Vẫn phải up mảng rỗng lên DB
-                    // Bằng cách xóa toàn bộ table nếu Data Client trống trơn (Nhưng giới hạn an toàn để không xóa nhầm)
-                    if (formattedData.length > 0) {
-                        // Xác định khóa chính (Hầu hết là 'id', riêng 1 số table nếu có khóa mảng phụ thì cần check thêm)
-                        const { error } = await supabase.from(table).upsert(formattedData, { onConflict: 'id' });
+                    const currentMap = new Map();
+                    const formattedCurrent = toSnakeCase(currentData);
+                    formattedCurrent.forEach((item: any) => currentMap.set(item.id, item));
+                    
+                    const prevMap = new Map();
+                    if (prevData && Array.isArray(prevData)) {
+                        const formattedPrev = toSnakeCase(prevData);
+                        formattedPrev.forEach((item: any) => prevMap.set(item.id, item));
+                    }
+                    
+                    const itemsToUpsert: any[] = [];
+                    const itemsToDelete: string[] = [];
+                    
+                    formattedCurrent.forEach((item: any) => {
+                        const prevItem = prevMap.get(item.id);
+                        if (!prevItem || JSON.stringify(prevItem) !== JSON.stringify(item)) {
+                            itemsToUpsert.push(item);
+                        }
+                    });
+                    
+                    if (prevData && Array.isArray(prevData)) {
+                         const formattedPrev = toSnakeCase(prevData);
+                         formattedPrev.forEach((item: any) => {
+                             if (!currentMap.has(item.id)) {
+                                 itemsToDelete.push(item.id);
+                             }
+                         });
+                    }
+
+                    if (itemsToUpsert.length > 0) {
+                        const { error } = await supabase.from(table).upsert(itemsToUpsert, { onConflict: 'id' });
                         if (error) {
-                            showToast(`Lỗi AutoSave [${table}]: ${error.message}`, 'error');
+                            showToast(`Lỗi AutoSave Upsert [${table}]: ${error.message}`, 'error');
                             console.error(`❌ Lỗi Supabase Sync ${table}:`, error);
                         } else {
-                            console.log(`✅ [AutoSave] Đã up ${formattedData.length} records lên ${table}`);
+                            console.log(`✅ [AutoSave] Đã cập nhật ${itemsToUpsert.length} records lên ${table}`);
                         }
-                    } else if (prevData && prevData.length > 0) {
-                        // Trường hợp ngàn cân treo sợi tóc: Xóa hết danh sách
-                        // (Thực tế app này không có nút xóa trắng tất cả bảng, nhưng đề phòng trường hợp đó)
-                        console.log(`⚠️ [AutoSave] Bỏ qua xóa trắng bảng ${table} để đề phòng. User tự xóa bằng tay.`);
+                    }
+
+                    if (itemsToDelete.length > 0) {
+                        const { error } = await supabase.from(table).delete().in('id', itemsToDelete);
+                        if (error) {
+                            showToast(`Lỗi AutoSave Delete [${table}]: ${error.message}`, 'error');
+                            console.error(`❌ Lỗi Supabase Delete ${table}:`, error);
+                        } else {
+                            console.log(`🗑️ [AutoSave] Đã xóa ${itemsToDelete.length} records ở ${table}`);
+                        }
                     }
                 } catch (err) {
                     console.error(`❌ Lỗi Auto-Save bảng ${table}:`, err);

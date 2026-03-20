@@ -39,6 +39,8 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [filterTopic, setFilterTopic] = useState<string>('all');
   const [filterNiche, setFilterNiche] = useState<string>('all');
   const [filterStaff, setFilterStaff] = useState<string>('all');
+  const [filterAliveStatus, setFilterAliveStatus] = useState<string>('all');
+  const [isScanningDead, setIsScanningDead] = useState(false);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
   const [isFetching, setIsFetching] = useState(false);
   const [fetchError, setFetchError] = useState('');
@@ -291,6 +293,50 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       setIsOptimizingMetadata(false);
       setAnalyzingChannelId(null);
     }
+  };
+
+  const handleScanDeadChannels = async () => {
+    if (channels.length === 0) return;
+    if (!youtubeApiKey) {
+      showToast('Vui lòng cấu hình YouTube API Key.', 'error');
+      return;
+    }
+
+    const channelsToScan = selectedIds.length > 0 
+      ? channels.filter(c => selectedIds.includes(c.id))
+      : channels;
+
+    if (!confirm(`Bạn sắp quét ${channelsToScan.length} kênh để kiểm tra trạng thái sống/chết. Quá trình này có thể tốn thời gian. Tiếp tục?`)) return;
+
+    setIsScanningDead(true);
+    setImportProgress({ current: 0, total: channelsToScan.length });
+    let deadCount = 0;
+
+    for (let i = 0; i < channelsToScan.length; i++) {
+       const target = channelsToScan[i];
+       setImportProgress({ current: i + 1, total: channelsToScan.length });
+       setAnalyzingChannelId(target.id);
+       
+       try {
+         if (i > 0) await sleep(1000);
+         await fetchYoutubeChannelInfo(target.url, youtubeApiKey, true);
+       } catch (err: any) {
+         if (err.message === "Không tìm thấy kênh. Vui lòng kiểm tra lại đường dẫn (URL) có chính xác không.") {
+            setChannels(prev => prev.map(c => c.id === target.id ? { ...c, status: 'dead' } : c));
+            deadCount++;
+         } else if (err.message && (err.message.includes('quota') || err.message.includes('limit'))) {
+             const rotated = rotateYoutubeKey();
+             if (rotated) { i--; await sleep(1000); continue; }
+             showToast('Hết quota API. Dừng quét.', 'error');
+             break;
+         }
+       }
+    }
+
+    setIsScanningDead(false);
+    setAnalyzingChannelId(null);
+    setImportProgress({ current: 0, total: 0 });
+    showToast(`Quét hoàn tất. Phát hiện ${deadCount} kênh đã chết.`, 'success');
   };
 
   const handleBulkAIAnalysis = async () => {
@@ -794,8 +840,10 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         matchesStaff = (staffMember.assignedChannelIds || []).includes(c.id);
       }
     }
+    
+    const matchesAliveStatus = filterAliveStatus === 'all' || (filterAliveStatus === 'dead' ? c.status === 'dead' : c.status !== 'dead');
 
-    return matchesSearch && matchesTopic && matchesNiche && matchesStaff;
+    return matchesSearch && matchesTopic && matchesNiche && matchesStaff && matchesAliveStatus;
   });
 
   return (
@@ -809,13 +857,22 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         </h1>
         <div className="flex flex-wrap gap-2">
           {hasPermission('sources_analyze') && (
-            <button
-              onClick={handleBulkAIAnalysis}
-              disabled={isAIAnalyzing || channels.length === 0}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50"
-            >
-              <Sparkles size={16} className="mr-2" /> AI Auto-Tag
-            </button>
+            <>
+              <button
+                onClick={handleBulkAIAnalysis}
+                disabled={isAIAnalyzing || channels.length === 0}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                <Sparkles size={16} className="mr-2" /> AI Auto-Tag
+              </button>
+              <button
+                onClick={handleScanDeadChannels}
+                disabled={isScanningDead || channels.length === 0}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
+              >
+                <AlertCircle size={16} className="mr-2" /> Quét Kênh Chết
+              </button>
+            </>
           )}
           <button
             onClick={handleExport}
@@ -846,7 +903,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           <div className="flex items-center">
             <RefreshCw size={20} className="text-blue-600 animate-spin mr-3" />
             <div>
-              <p className="text-sm font-medium text-blue-900">{isAIAnalyzing ? 'AI đang phân tích chủ đề...' : 'Đang nhập dữ liệu hàng loạt...'}</p>
+              <p className="text-sm font-medium text-blue-900">{isAIAnalyzing ? 'AI đang phân tích chủ đề...' : isScanningDead ? 'Đang quét kiểm tra kênh chết...' : 'Đang nhập dữ liệu hàng loạt...'}</p>
               <p className="text-xs text-blue-700">Tiến độ: {importProgress.current}/{importProgress.total} kênh</p>
             </div>
           </div>
@@ -862,6 +919,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           <input type="text" placeholder="Tìm kiếm kênh..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
         
+        <select value={filterAliveStatus} onChange={e => setFilterAliveStatus(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
+          <option value="all">Tất cả Trạng thái</option>
+          <option value="active">Đang Sống</option>
+          <option value="dead">Kênh Đã Chết</option>
+        </select>
+
         <select value={filterNiche} onChange={e => setFilterNiche(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
           <option value="all">Tất cả Nhóm CĐ</option>
           {Array.from(new Set(topics.map(t => t.niche || 'Khác'))).map(niche => (
@@ -931,7 +994,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                 const proxy = proxies.find(p => p.id === channel.proxyId);
                 const isSelected = selectedIds.includes(channel.id);
                 return (
-                  <tr key={channel.id} className={`hover:bg-gray-50 transition-all ${isSelected ? 'bg-blue-50/30' : ''} ${analyzingChannelId === channel.id ? 'bg-purple-50 ring-1 ring-inset ring-purple-200' : ''}`}>
+                  <tr key={channel.id} className={`hover:bg-gray-50 transition-all ${isSelected ? 'bg-blue-50/30' : ''} ${analyzingChannelId === channel.id ? 'bg-purple-50 ring-1 ring-inset ring-purple-200' : ''} ${channel.status === 'dead' ? 'bg-red-50/80 !border-red-200' : ''}`}>
                     <td className="p-4">
                       <input 
                         type="checkbox" 
@@ -965,11 +1028,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                           )}
                         </div>
                         <div className="flex flex-col">
-                          <div className="flex items-center space-x-2">
-                            <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200">
+                          <div className="flex items-center space-x-2 flex-wrap gap-1">
+                            {channel.status === 'dead' && <span className="text-red-700 text-[10px] px-1 bg-red-200 border border-red-300 rounded font-bold uppercase shrink-0 tracking-wider shadow-sm">Chết</span>}
+                            <span className="text-[10px] font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200 shrink-0">
                               {channel.channelCode}
                             </span>
-                            <span className="font-medium text-gray-900">{channel.name}</span>
+                            <span className="font-medium text-gray-900 truncate">{channel.name}</span>
                           </div>
                           
                           {/* Hiển thị nhân sự */}
@@ -1046,9 +1110,9 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                       {proxy ? <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{proxy.ip}</span> : <span className="text-gray-400 italic">Không dùng proxy</span>}
                     </td>
                     <td className="p-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${channel.status === 'active' ? 'bg-green-100 text-green-800' : channel.status === 'suspended' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${channel.status === 'active' ? 'bg-green-100 text-green-800' : channel.status === 'suspended' ? 'bg-orange-100 text-orange-800' : channel.status === 'dead' ? 'bg-red-100 text-red-800 border border-red-200 shadow-sm' : 'bg-gray-100 text-gray-800'
                         }`}>
-                        {channel.status === 'active' ? 'Hoạt động' : channel.status === 'suspended' ? 'Bị đình chỉ' : 'Tạm ngưng'}
+                        {channel.status === 'active' ? 'Hoạt động' : channel.status === 'suspended' ? 'Bị đình chỉ' : channel.status === 'dead' ? 'Bị YouTube xóa' : 'Tạm ngưng'}
                       </span>
                     </td>
                     <td className="p-4 text-right">

@@ -119,9 +119,25 @@ export function TaskManager({
     return tasks.filter(t => (t.assigneeIds || []).includes(currentStaff.id));
   }, [tasks, currentStaff]);
 
-  const handleClaimTask = (taskId: string) => {
+  const handleClaimTask = async (taskId: string) => {
     if (!currentStaff) {
       showToast('Không tìm thấy thông tin nhân sự của bạn.', 'error');
+      return;
+    }
+
+    // Call Supabase carefully to avoid race conditions: Only modify if it is currently claimable
+    const { data, error } = await supabase
+      .from('video_tasks')
+      .update({
+        assignee_ids: [currentStaff.id],
+        is_claimable: false
+      })
+      .eq('id', taskId)
+      .eq('is_claimable', true)
+      .select();
+
+    if (error || !data || data.length === 0) {
+      showToast('Lỗi: Công việc này đã có người nhận hoặc không còn tồn tại.', 'error');
       return;
     }
 

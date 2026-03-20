@@ -73,6 +73,8 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTopic, setFilterTopic] = useState<string>('all');
   const [filterNiche, setFilterNiche] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [isScanningDead, setIsScanningDead] = useState(false);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -350,6 +352,50 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
       setIsAnalyzingGap(false);
       setAnalyzingChannelId(null);
     }
+  };
+
+  const handleScanDeadChannels = async () => {
+    if (sourceChannels.length === 0) return;
+    if (!youtubeApiKey) {
+      showToast('Vui lòng cấu hình YouTube API Key.', 'error');
+      return;
+    }
+
+    const channelsToScan = selectedIds.length > 0 
+      ? sourceChannels.filter(c => selectedIds.includes(c.id))
+      : sourceChannels;
+
+    if (!confirm(`Bạn sắp quét ${channelsToScan.length} kênh để kiểm tra kênh chết. Quá trình này có thể tốn vài phút. Tiếp tục?`)) return;
+
+    setIsScanningDead(true);
+    setImportProgress({ current: 0, total: channelsToScan.length });
+    let deadCount = 0;
+
+    for (let i = 0; i < channelsToScan.length; i++) {
+       const target = channelsToScan[i];
+       setImportProgress({ current: i + 1, total: channelsToScan.length });
+       setAnalyzingChannelId(target.id);
+       
+       try {
+         if (i > 0) await sleep(1000);
+         await fetchYoutubeChannelInfo(target.url, youtubeApiKey, true);
+       } catch (err: any) {
+         if (err.message === "Không tìm thấy kênh. Vui lòng kiểm tra lại đường dẫn (URL) có chính xác không.") {
+            setSourceChannels(prev => prev.map(c => c.id === target.id ? { ...c, status: 'dead' } : c));
+            deadCount++;
+         } else if (err.message && (err.message.includes('quota') || err.message.includes('limit'))) {
+             const rotated = rotateYoutubeKey();
+             if (rotated) { i--; await sleep(1000); continue; }
+             showToast('Hết quota API. Dừng quét.', 'error');
+             break;
+         }
+       }
+    }
+
+    setIsScanningDead(false);
+    setAnalyzingChannelId(null);
+    setImportProgress({ current: 0, total: 0 });
+    showToast(`Quét hoàn tất. Phát hiện ${deadCount} kênh chết.`, 'success');
   };
 
   const handleBulkAIAnalysis = async () => {
@@ -839,11 +885,11 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
       });
     }
 
-    // Privacy Filter: Admin/Manager thấy hết. Nhân sự thì chỉ thấy kênh có ID của mình hoặc mảng rỗng (public)
     const isPublic = !channel.allowedStaffIds || channel.allowedStaffIds.length === 0;
     const isAllowed = currentUser?.role === 'admin' || currentUser?.role === 'manager' || isPublic || (currentUser && channel.allowedStaffIds?.includes(currentUser.id));
+    const matchesStatus = filterStatus === 'all' || (filterStatus === 'dead' ? channel.status === 'dead' : channel.status !== 'dead');
 
-    return matchesSearch && matchesTopic && matchesNiche && isAllowed;
+    return matchesSearch && matchesTopic && matchesNiche && isAllowed && matchesStatus;
   }).sort((a, b) => {
     // Sort by rating descending, then by subscribers descending
     if (a.rating !== b.rating) {
@@ -852,10 +898,21 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     return (b.subscribers || 0) - (a.subscribers || 0);
   });
 
+  // Calculate viewable topics / channels for privacy
+  const viewableSourceChannels = sourceChannels.filter(channel => {
+    const isPublic = !channel.allowedStaffIds || channel.allowedStaffIds.length === 0;
+    return currentUser?.role === 'admin' || currentUser?.role === 'manager' || isPublic || (currentUser && channel.allowedStaffIds?.includes(currentUser.id));
+  });
+  
+  const availableTopicIds = new Set(viewableSourceChannels.flatMap(c => c.topicIds || []));
+  const viewableTopics = topics.filter(t => 
+    currentUser?.role === 'admin' || currentUser?.role === 'manager' || availableTopicIds.has(t.id)
+  );
+
   // Tính toán Mini-Dashboard Radar
-  const totalSubscribers = sourceChannels.reduce((sum, c) => sum + (c.subscribers || 0), 0);
-  const totalViewsRadar = sourceChannels.reduce((sum, c) => sum + (c.totalViews || 0), 0);
-  const viralAlertsCount = sourceChannels.filter(c => c.isViral).length;
+  const totalSubscribers = viewableSourceChannels.reduce((sum, c) => sum + (c.subscribers || 0), 0);
+  const totalViewsRadar = viewableSourceChannels.reduce((sum, c) => sum + (c.totalViews || 0), 0);
+  const viralAlertsCount = viewableSourceChannels.filter(c => c.isViral).length;
 
   return (
     <div className="space-y-6">
@@ -894,20 +951,29 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           <h1 className="text-2xl font-bold text-gray-900">
             Kênh Nguồn (Tham khảo)
             <span className="ml-2 text-sm font-normal text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-              {filteredChannels.length} / {sourceChannels.length} kênh
+              {filteredChannels.length} / {viewableSourceChannels.length} kênh
             </span>
           </h1>
           <p className="text-sm text-gray-500 mt-1">Quản lý các kênh đối thủ, kênh lấy ý tưởng nội dung</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {hasPermission('sources_analyze') && (
-            <button
-              onClick={handleBulkAIAnalysis}
-              disabled={isAIAnalyzing || sourceChannels.length === 0}
-              className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50"
-            >
-              <Sparkles size={16} className="mr-2" /> AI Auto-Tag
-            </button>
+            <>
+              <button
+                onClick={handleBulkAIAnalysis}
+                disabled={isAIAnalyzing || sourceChannels.length === 0}
+                className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                <Sparkles size={16} className="mr-2" /> AI Auto-Tag
+              </button>
+              <button
+                onClick={handleScanDeadChannels}
+                disabled={isScanningDead || sourceChannels.length === 0}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                <AlertCircle size={16} className="mr-2" /> Quét Kênh Chết
+              </button>
+            </>
           )}
           <button
             onClick={handleExport}
@@ -954,7 +1020,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px]"
         >
           <option value="all">Tất cả Nhóm CĐ</option>
-          {Array.from(new Set(topics.map(t => t.niche || 'Khác'))).map(niche => (
+          {Array.from(new Set(viewableTopics.map(t => t.niche || 'Khác'))).map(niche => (
             <option key={niche} value={niche}>{niche}</option>
           ))}
         </select>
@@ -965,7 +1031,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px]"
         >
           <option value="all">Tất cả tag chủ đề</option>
-          {topics.filter(t => filterNiche === 'all' || (t.niche || 'Khác') === filterNiche).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {viewableTopics.filter(t => filterNiche === 'all' || (t.niche || 'Khác') === filterNiche).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </div>
 
@@ -974,7 +1040,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           <div className="flex items-center">
             <RefreshCw size={20} className="text-blue-600 animate-spin mr-3" />
             <div>
-              <p className="text-sm font-medium text-blue-900">{isAIAnalyzing ? 'AI đang phân tích chủ đề...' : 'Đang nhập dữ liệu hàng loạt...'}</p>
+              <p className="text-sm font-medium text-blue-900">{isAIAnalyzing ? 'AI đang phân tích chủ đề...' : isScanningDead ? 'Đang quét tìm kênh chết...' : 'Đang nhập dữ liệu hàng loạt...'}</p>
               <p className="text-xs text-blue-700">Tiến độ: {importProgress.current}/{importProgress.total} kênh</p>
             </div>
           </div>
@@ -1038,7 +1104,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             {filteredChannels.map(channel => {
               const isSelected = selectedIds.includes(channel.id);
               return (
-              <tr key={channel.id} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-orange-50/30' : ''} ${analyzingChannelId === channel.id ? 'bg-purple-50/50' : ''}`}>
+              <tr key={channel.id} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-orange-50/30' : ''} ${analyzingChannelId === channel.id ? 'bg-purple-50/50' : ''} ${channel.status === 'dead' ? 'bg-red-50/80 !border-red-200' : ''}`}>
                 <td className="p-4">
                   <input 
                     type="checkbox" 
@@ -1067,7 +1133,10 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                       )}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-semibold text-gray-900 text-sm truncate max-w-[150px]" title={channel.name}>{channel.name}</h3>
+                      <h3 className="font-semibold text-gray-900 text-sm truncate max-w-[150px] flex items-center" title={channel.name}>
+                        {channel.status === 'dead' && <span className="text-red-700 mr-1.5 text-[10px] px-1 bg-red-200 border border-red-300 rounded font-bold uppercase shrink-0 tracking-wider shadow-sm">Chết</span>}
+                        <span className="truncate">{channel.name}</span>
+                      </h3>
                       <div className="flex items-center space-x-2 mt-0.5">
                         <a href={channel.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-500 hover:underline flex items-center">
                           Link <ExternalLink size={10} className="ml-0.5" />
