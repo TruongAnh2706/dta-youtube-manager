@@ -135,6 +135,7 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
     setScanProgress({ current: 0, total: topicChannels.length, channelName: 'Đang khởi tạo...', tagsFound: 0, hashtagsFound: 0 });
     
     try {
+      let errorCount = 0;
       for (let i = 0; i < topicChannels.length; i++) {
          const channel = topicChannels[i];
          if (!channel.url) continue;
@@ -148,7 +149,11 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
          });
 
          try {
-           const info = await fetchYoutubeChannelInfo(channel.url, youtubeApiKey, false);
+           // QUAN TRỌNG: skipTopVideos = true để tiết kiệm API quota (Search API tốn 100 đơn vị/lần)
+           const info = await fetchYoutubeChannelInfo(channel.url, youtubeApiKey, true);
+           
+           console.log(`[SCAN] Kênh "${channel.name}": keywords="${info.channelKeywords?.substring(0, 50)}", latestVideos=${info.latestVideos?.length || 0}`);
+           
            if (info.channelKeywords) {
              const keywords = info.channelKeywords.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
              keywords.forEach(k => {
@@ -160,11 +165,14 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
              });
            }
            
-           const allScannedVideos = [...(info.latestVideos || []), ...(info.topVideos || [])];
+           const allScannedVideos = [...(info.latestVideos || [])];
+           
+           console.log(`[SCAN] Kênh "${channel.name}": Tổng ${allScannedVideos.length} video để quét tags.`);
            
            allScannedVideos.forEach(v => {
              // Thêm Tag, đếm tần suất
-             if (v.tags) {
+             if (v.tags && v.tags.length > 0) {
+                console.log(`[SCAN] Video "${v.title?.substring(0, 30)}": ${v.tags.length} tags`);
                 v.tags.forEach(t => {
                    const tw = t.trim();
                    if (tw) {
@@ -175,14 +183,14 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
              }
              
              // Parse Hashtag từ mô tả và phân tích tiêu đề (Hỗ trợ Unicode Đa Ngôn Ngữ)
-             const fullTextContext = (v.description + " " + v.title).replace(/\n/g, ' ');
-             // Sử dụng \p{L} cho các chữ cái (Letters) đa ngôn ngữ, \p{N} cho số, hỗ trợ tiếng Việt, Nhật, Hàn...
+             const fullTextContext = ((v.description || '') + " " + (v.title || '')).replace(/\n/g, ' ');
              const hashMatches = fullTextContext.match(/#[\p{L}\p{N}_]+/gu);
              
-             if (hashMatches) {
+             if (hashMatches && hashMatches.length > 0) {
+               console.log(`[SCAN] Video "${v.title?.substring(0, 30)}": ${hashMatches.length} hashtags tìm thấy`);
                hashMatches.forEach((h: string) => {
-                 const cleanH = h.substring(1).toLowerCase(); // Không cần dùng replace ASCII nữa vì regex /#[\p{L}\p{N}_]+/gu đã tự động loại bỏ punctuation
-                 if (cleanH.length > 2) { // Hashtag phải dài hơn 2 ký tự
+                 const cleanH = h.substring(1).toLowerCase();
+                 if (cleanH.length > 1) {
                    hashtagCounts.set(cleanH, (hashtagCounts.get(cleanH) || 0) + 1);
                    tempHashtagsFound++;
                  }
@@ -190,9 +198,10 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
              }
            });
            
-           await sleep(1000); // Tránh rate limit
-         } catch (e) {
-           console.log("Lỗi khi quét kênh", channel.name, e);
+           await sleep(800); // Tránh rate limit
+         } catch (e: any) {
+           errorCount++;
+           console.error(`[SCAN ERROR] Kênh "${channel.name}": ${e.message || e}`);
          }
       }
       
@@ -223,7 +232,17 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
         tags: finalTags,
         hashtags: finalHashtags
       });
-      alert(`Đã quét xong! Phân tích hàng trăm từ khóa và đã nạp thành công ${finalTags.length - formData.tags.length} Tag xịn nhất cùng ${finalHashtags.length - formData.hashtags.length} Hashtag phổ biến nhất (Đã lọc tần suất).`);
+
+      const newTags = finalTags.length - formData.tags.length;
+      const newHashtags = finalHashtags.length - formData.hashtags.length;
+      
+      if (errorCount > 0 && newTags === 0 && newHashtags === 0) {
+        alert(`⚠️ Quét xong nhưng KHÔNG lấy được dữ liệu nào!\n\n${errorCount}/${topicChannels.length} kênh bị lỗi.\n\nNguyên nhân có thể:\n1. API Key Youtube đã HẾT QUOTA hôm nay (Giới hạn 10.000 đơn vị/ngày). Hãy đổi Key khác hoặc chờ đến ngày mai.\n2. API Key không hợp lệ.\n\nMở Console trình duyệt (F12) để xem chi tiết lỗi.`);
+      } else if (errorCount > 0) {
+        alert(`Đã quét xong! Nạp ${newTags} Tag + ${newHashtags} Hashtag.\n⚠️ Lưu ý: ${errorCount}/${topicChannels.length} kênh bị lỗi (có thể do quota API).`);
+      } else {
+        alert(`Đã quét xong! Phân tích thành công ${topicChannels.length} kênh và nạp ${newTags} Tag xịn nhất cùng ${newHashtags} Hashtag phổ biến nhất.`);
+      }
       
     } catch (error) {
        alert("Có lỗi xảy ra: " + error);
