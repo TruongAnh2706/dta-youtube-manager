@@ -81,7 +81,7 @@ export function NicheExplorer({ youtubeApiKey, geminiApiKey }: NicheExplorerProp
             if (!videoRes.ok) throw new Error('Lỗi truy vấn Video Details API');
             const videoData = await videoRes.json();
 
-            const tagRegex = /#[\p{L}\p{N}_]+/gu;
+            const tagRegex = /#\w+/g;
             const tagCount: Record<string, number> = {};
 
             videoData.items.forEach((item: any) => {
@@ -93,7 +93,7 @@ export function NicheExplorer({ youtubeApiKey, geminiApiKey }: NicheExplorerProp
                     });
                 }
                 // Lấy Hashtag từ Title & Description
-                const textToMatch = (item.snippet.title + ' ' + (item.snippet.description || '')).toLowerCase();
+                const textToMatch = (item.snippet.title + ' ' + item.snippet.description).toLowerCase();
                 const matches = textToMatch.match(tagRegex);
                 if (matches) {
                     matches.forEach(ht => {

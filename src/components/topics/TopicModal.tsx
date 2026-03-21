@@ -160,7 +160,9 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
              });
            }
            
-           info.latestVideos.forEach(v => {
+           const allScannedVideos = [...(info.latestVideos || []), ...(info.topVideos || [])];
+           
+           allScannedVideos.forEach(v => {
              // Thêm Tag, đếm tần suất
              if (v.tags) {
                 v.tags.forEach(t => {
@@ -172,12 +174,13 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
                 });
              }
              
-             // Parse Hashtag từ mô tả video
-             const hashMatches = (v.description || '').match(/#[\p{L}\p{N}_]+/gu);
+             // Parse Hashtag từ mô tả và phân tích tiêu đề
+             const fullTextContext = (v.description + " " + v.title).replace(/\n/g, ' ');
+             const hashMatches = fullTextContext.match(/#[^\s#<>]+/g);
              if (hashMatches) {
                hashMatches.forEach((h: string) => {
-                 const cleanH = h.substring(1).toUpperCase();
-                 if (cleanH.length > 1) {
+                 const cleanH = h.substring(1).toLowerCase().replace(/[^a-z0-9_]/gi, ''); // Xóa các ký tự lạ dính vào
+                 if (cleanH.length > 2) { // Hashtag phải dài hơn 2 ký tự
                    hashtagCounts.set(cleanH, (hashtagCounts.get(cleanH) || 0) + 1);
                    tempHashtagsFound++;
                  }

@@ -53,7 +53,7 @@ export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipT
     let latestVideos = [];
     if (uploadsPlaylistId) {
       try {
-        const latestRes = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=3&key=${apiKey}`);
+        const latestRes = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${uploadsPlaylistId}&maxResults=5&key=${apiKey}`);
         const latestData = await latestRes.json();
         
         if (latestData.items && latestData.items.length > 0) {
@@ -80,7 +80,7 @@ export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipT
     let topVideos = [];
     if (!skipTopVideos) {
       try {
-        const topRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=viewCount&type=video&maxResults=3&key=${apiKey}`);
+        const topRes = await fetch(`https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&order=viewCount&type=video&maxResults=5&key=${apiKey}`);
         const topData = await topRes.json();
         
         if (topData.items && topData.items.length > 0) {
