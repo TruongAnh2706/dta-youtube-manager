@@ -173,7 +173,7 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
              }
              
              // Parse Hashtag từ mô tả video
-             const hashMatches = v.description.match(/#[^\s#]+/g);
+             const hashMatches = (v.description || '').match(/#[\p{L}\p{N}_]+/gu);
              if (hashMatches) {
                hashMatches.forEach((h: string) => {
                  const cleanH = h.substring(1).toUpperCase();
