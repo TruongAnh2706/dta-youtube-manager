@@ -174,12 +174,14 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
                 });
              }
              
-             // Parse Hashtag từ mô tả và phân tích tiêu đề
+             // Parse Hashtag từ mô tả và phân tích tiêu đề (Hỗ trợ Unicode Đa Ngôn Ngữ)
              const fullTextContext = (v.description + " " + v.title).replace(/\n/g, ' ');
-             const hashMatches = fullTextContext.match(/#[^\s#<>]+/g);
+             // Sử dụng \p{L} cho các chữ cái (Letters) đa ngôn ngữ, \p{N} cho số, hỗ trợ tiếng Việt, Nhật, Hàn...
+             const hashMatches = fullTextContext.match(/#[\p{L}\p{N}_]+/gu);
+             
              if (hashMatches) {
                hashMatches.forEach((h: string) => {
-                 const cleanH = h.substring(1).toLowerCase().replace(/[^a-z0-9_]/gi, ''); // Xóa các ký tự lạ dính vào
+                 const cleanH = h.substring(1).toLowerCase(); // Không cần dùng replace ASCII nữa vì regex /#[\p{L}\p{N}_]+/gu đã tự động loại bỏ punctuation
                  if (cleanH.length > 2) { // Hashtag phải dài hơn 2 ký tự
                    hashtagCounts.set(cleanH, (hashtagCounts.get(cleanH) || 0) + 1);
                    tempHashtagsFound++;
