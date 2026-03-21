@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS topics (
   monetization_potential TEXT,
   competition_level TEXT,
   niche TEXT,
+  default_schedules JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

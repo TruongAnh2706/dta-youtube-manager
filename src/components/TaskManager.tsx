@@ -7,7 +7,7 @@ import {
   PlayCircle, FileText, Calendar, User, Plus, X, Link as LinkIcon,
   LayoutGrid, Kanban
 } from 'lucide-react';
-import { format, isToday, parseISO } from 'date-fns';
+import { format, isToday, parseISO, isSameMonth, startOfDay, endOfDay, eachDayOfInterval } from 'date-fns';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import { supabase } from '../lib/supabase';
@@ -33,7 +33,9 @@ export function TaskManager({
   const [activeTab, setActiveTab] = useState<'all-tasks' | 'marketplace' | 'my-tasks' | 'reports'>(
     (currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'leader') ? 'all-tasks' : 'my-tasks'
   );
-  const [reportNotes, setReportNotes] = useState('');
+  const [reportIssues, setReportIssues] = useState('');
+  const [reportExpenses, setReportExpenses] = useState<number | ''>('');
+  const [reportPlan, setReportPlan] = useState('');
   const [viewMode, setViewMode] = useState<'grid' | 'board'>('grid');
   const [taskCommentModal, setTaskCommentModal] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
@@ -114,8 +116,11 @@ export function TaskManager({
     [tasks]
   );
 
+  // Đã gỡ bỏ virtualTasks khỏi TaskManager để chuyển Kanban thành bảng việc Ad-hoc thuần tuý.
+
   const myTasks = useMemo(() => {
     if (!currentStaff) return [];
+    // Chỉ giữ lại những task thật được giao
     return tasks.filter(t => (t.assigneeIds || []).includes(currentStaff.id));
   }, [tasks, currentStaff]);
 
@@ -149,41 +154,36 @@ export function TaskManager({
     showToast('Đã nhận việc thành công!', 'success');
   };
 
-  const handleUpdateStatus = (taskId: string, newStatus: TaskStatus) => {
+  const handleUpdateStatus = async (taskId: string, newStatus: TaskStatus) => {
     setTasks(prev => prev.map(t =>
       t.id === taskId ? { ...t, status: newStatus } : t
     ));
     showToast(`Đã cập nhật trạng thái sang: ${newStatus}`, 'info');
+    
+    // Update Supabase
+    await supabase.from('video_tasks').update({ status: newStatus }).eq('id', taskId);
   };
 
   const handleDeleteTask = async (taskId: string) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa công việc này? Thao tác này không thể hoàn tác.')) {
+    if (window.confirm('Bạn có chắc chắn muốn xóa công việc này?')) {
       setTasks(prev => prev.filter(t => t.id !== taskId));
-      showToast('Đã xóa công việc thành công!', 'info');
-      try {
-        await supabase.from('video_tasks').delete().eq('id', taskId);
-      } catch (error) {
-        console.error('Error deleting task:', error);
-      }
+      showToast('Đã dọn dẹp công việc thành công!', 'info');
+      await supabase.from('video_tasks').delete().eq('id', taskId);
     }
   };
 
   const handleBulkDelete = async () => {
     if (window.confirm(`Bạn có chắc muốn xóa ${selectedTaskIds.length} công việc đã chọn?`)) {
-      const idsToDelete = [...selectedTaskIds];
-      setTasks(prev => prev.filter(t => !idsToDelete.includes(t.id)));
+      setTasks(prev => prev.filter(t => !selectedTaskIds.includes(t.id)));
+      await supabase.from('video_tasks').delete().in('id', selectedTaskIds);
       setSelectedTaskIds([]);
-      showToast(`Đã xóa ${idsToDelete.length} công việc!`, 'info');
-      try {
-        await supabase.from('video_tasks').delete().in('id', idsToDelete);
-      } catch (error) {
-        console.error('Error bulk deleting tasks:', error);
-      }
+      showToast(`Đã xóa hàng loạt thành công!`, 'info');
     }
   };
 
-  const handleBulkUpdateStatus = (newStatus: TaskStatus) => {
+  const handleBulkUpdateStatus = async (newStatus: TaskStatus) => {
     setTasks(prev => prev.map(t => selectedTaskIds.includes(t.id) ? { ...t, status: newStatus } : t));
+    await supabase.from('video_tasks').update({ status: newStatus }).in('id', selectedTaskIds);
     setSelectedTaskIds([]);
     showToast(`Đã chuyển trạng thái ${selectedTaskIds.length} việc thành công!`, 'success');
   };
@@ -247,31 +247,30 @@ export function TaskManager({
   };
 
   const displayedTasks = useMemo(() => {
+    // CHỈ hiển thị Ad-hoc tasks (Loại bỏ Lịch Định Kỳ & Deleted) 
     let list = activeTab === 'all-tasks' ? tasks : myTasks;
+    list = list.filter(t => !t.title.startsWith('[Lịch Định Kỳ]') && !t.title.startsWith('[DELETED]'));
+    
     if (filterStaff !== 'all') {
-      list = list.filter(t => t.assigneeIds?.includes(filterStaff));
+       list = list.filter(t => t.assigneeIds?.includes(filterStaff));
     }
     if (filterStatus !== 'all') {
-      list = list.filter(t => t.status === filterStatus);
+       list = list.filter(t => t.status === filterStatus);
     }
     if (filterCategory !== 'all') {
-      list = list.filter(t => {
-        let displayCat = '';
-        if (t.title.startsWith('[')) {
-          const closeBrackIndex = t.title.indexOf(']');
-          if (closeBrackIndex !== -1) {
-            displayCat = t.title.substring(1, closeBrackIndex);
-          }
-        }
-        
-        const isOffice = displayCat === 'Hành chính';
-        const isChannelSetup = displayCat === 'Khởi tạo kênh' || displayCat.includes('Mail') || displayCat.includes('Khai thác');
-        
-        if (filterCategory === 'office') return isOffice;
-        if (filterCategory === 'channel') return isChannelSetup;
-        if (filterCategory === 'video') return !isOffice && !isChannelSetup;
-        return true;
-      });
+       list = list.filter(t => {
+         let displayCat = '';
+         if (t.title.startsWith('[')) {
+           const cb = t.title.indexOf(']');
+           if (cb !== -1) displayCat = t.title.substring(1, cb);
+         }
+         const isOffice = displayCat === 'Hành chính';
+         const isChannelSetup = displayCat === 'Khởi tạo kênh' || displayCat.includes('Mail') || displayCat.includes('Khai thác');
+         if (filterCategory === 'office') return isOffice;
+         if (filterCategory === 'channel') return isChannelSetup;
+         if (filterCategory === 'video') return !isOffice && !isChannelSetup;
+         return true;
+       });
     }
 
     return list.sort((a, b) => {
@@ -283,27 +282,41 @@ export function TaskManager({
     });
   }, [tasks, myTasks, activeTab, filterStaff, filterStatus, filterCategory, workflowSteps]);
 
+  const reportFormMetrics = useMemo(() => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const lastStepId = workflowSteps.length > 0 ? workflowSteps[workflowSteps.length - 1].id : 'published';
+    const completedTasksToday = myTasks.filter(t => t.status === lastStepId && t.dueDate === today)
+      .map(t => ({ id: t.id, title: t.title }));
+    const pendingTasksToday = myTasks.filter(t => isTaskOverdue(t) || (t.status !== lastStepId && t.dueDate === today))
+      .map(t => ({ id: t.id, title: t.title }));
+    return { completedTasksToday, pendingTasksToday, today, lastStepId };
+  }, [myTasks, workflowSteps]);
+
   const handleSubmitReport = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentStaff) return;
 
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const renderedToday = myTasks.filter(t =>
-      (t.status === 'review' || t.status === 'published') && t.dueDate === today
-    ).length;
+    const { today, completedTasksToday, pendingTasksToday } = reportFormMetrics;
 
     const newReport: DailyReport = {
       id: Date.now().toString(),
       staffId: currentStaff.id,
       date: today,
-      renderedCount: renderedToday,
-      notes: reportNotes,
+      renderedCount: completedTasksToday.length, // Backward compatibility
+      notes: reportIssues, // Backward compatibility
+      completedTasks: completedTasksToday,
+      pendingTasks: pendingTasksToday,
+      issues: reportIssues,
+      expenses: Number(reportExpenses) || 0,
+      planTomorrow: reportPlan,
       timestamp: new Date().toISOString()
     };
 
     setDailyReports(prev => [...prev, newReport]);
-    setReportNotes('');
-    showToast('Đã gửi báo cáo cuối ngày thành công!', 'success');
+    setReportIssues('');
+    setReportExpenses('');
+    setReportPlan('');
+    showToast('Đã gửi báo cáo cuối ngày phân tích tự động thành công!', 'success');
   };
 
   const handleCreateTask = (e: React.FormEvent) => {
@@ -681,6 +694,23 @@ export function TaskManager({
                     </div>
                   </div>
 
+                  {/* Render SubTasks Lịch Đăng Nằm Ngang (nếu là dạng Grouped Mode) */}
+                  {(task as any).isGrouped && (task as any).subTasks && (
+                     <div className="flex flex-wrap items-center gap-2 mb-3 px-6 py-2 bg-gray-50/80 rounded-lg border border-gray-100">
+                        {((task as any).subTasks as VideoTask[]).map(st => {
+                           const isSuccess = workflowSteps.findIndex(s => s.id === st.status) === workflowSteps.length - 1;
+                           return (
+                             <div key={st.id} className={`flex items-center px-2 py-1 rounded shadow-sm text-xs font-bold transition-colors ${
+                               isSuccess ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-white text-gray-600 border border-gray-200'
+                             }`}>
+                               <Clock size={12} className="mr-1" /> {st.publishTime || '--:--'}
+                               {isSuccess && <CheckCircle2 size={12} className="ml-1" />}
+                             </div>
+                           )
+                        })}
+                     </div>
+                  )}
+
                   {/* Workflow Actions */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-gray-100 relative z-10 w-full">
                     <div className="flex flex-wrap gap-2">
@@ -802,6 +832,7 @@ export function TaskManager({
                               </div>
                               {category && <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded mb-2 uppercase ${overdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{category}</span>}
                               
+                              {/* Khối này đã được dọn sạch do không còn Virtual Grouped Tasks */}
                               <div className="flex justify-between items-end mt-2">
                                 <div className="flex -space-x-1.5 overflow-hidden">
                                   {assignedStaffArr.map(s => (
@@ -899,89 +930,181 @@ export function TaskManager({
       )}
 
       {activeTab === 'reports' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Report Form */}
-          <div className="lg:col-span-1">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Dashboard Cá Nhân - Left Column */}
+          <div className="xl:col-span-1 space-y-6">
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                <Send size={18} className="mr-2 text-blue-600" /> Báo cáo cuối ngày
+                <BarChart3 size={18} className="mr-2 text-blue-600" /> Thống kê hôm nay của bạn
+              </h2>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+                  <p className="text-xs text-green-700 font-semibold mb-1">Đã hoàn thành</p>
+                  <p className="text-2xl font-black text-green-600">{reportFormMetrics.completedTasksToday.length}</p>
+                </div>
+                <div className="bg-red-50 rounded-lg p-4 border border-red-100">
+                  <p className="text-xs text-red-700 font-semibold mb-1">Trễ / Tồn đọng</p>
+                  <p className="text-2xl font-black text-red-600">{reportFormMetrics.pendingTasksToday.length}</p>
+                </div>
+              </div>
+              
+              {reportFormMetrics.pendingTasksToday.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs font-bold text-red-600 mb-2">Công việc đang tồn đọng:</p>
+                  <ul className="text-xs text-gray-600 space-y-1 pl-4 list-disc max-h-32 overflow-y-auto">
+                    {reportFormMetrics.pendingTasksToday.map(t => <li key={t.id} className="truncate" title={t.title}>{t.title}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            {/* Form Gửi báo cáo */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative sticky top-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <Send size={18} className="mr-2 text-blue-600" /> Nộp Báo cáo cuối ngày
               </h2>
               <form onSubmit={handleSubmitReport} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Ngày báo cáo</label>
                   <input
                     type="text" disabled value={format(new Date(), 'dd/MM/yyyy')}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-500"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-500 font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Video đã render hôm nay</label>
-                  <div className="text-2xl font-black text-blue-600 bg-blue-50 p-3 rounded-lg text-center border border-blue-100">
-                    {myTasks.filter(t => (t.status === 'review' || t.status === 'published') && t.dueDate === format(new Date(), 'yyyy-MM-dd')).length}
-                  </div>
-                  <p className="text-[10px] text-gray-400 mt-1 italic">* Tự động tính từ các task ở trạng thái Duyệt/Đã đăng có hạn hôm nay.</p>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Khó khăn / Vấn đề <span className="text-red-500">*</span></label>
+                  <textarea
+                    required
+                    value={reportIssues}
+                    onChange={e => setReportIssues(e.target.value)}
+                    placeholder="Bạn gặp vướng mắc gì hôm nay? (VD: Máy lag, thiếu tài nguyên... Hoặc ghi 'Không')"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú công việc / Vấn đề</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Kế hoạch ngày mai <span className="text-red-500">*</span></label>
                   <textarea
-                    value={reportNotes}
-                    onChange={e => setReportNotes(e.target.value)}
-                    placeholder="Hôm nay bạn đã làm gì? Có gặp khó khăn gì không?"
+                    required
+                    value={reportPlan}
+                    onChange={e => setReportPlan(e.target.value)}
+                    placeholder="Mục tiêu chính vào ngày mai là gì?"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Chi phí cá nhân ứng trước (VND) (Nếu có)</label>
+                  <input
+                    type="number"
+                    value={reportExpenses}
+                    onChange={e => setReportExpenses(e.target.value ? Number(e.target.value) : '')}
+                    placeholder="VD: 50000"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    rows={4}
                   />
                 </div>
                 <button
                   type="submit"
                   disabled={!currentStaff}
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center shadow-md"
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center shadow-md mt-4"
                 >
-                  <ClipboardCheck size={18} className="mr-2" /> Gửi báo cáo
+                  <ClipboardCheck size={18} className="mr-2" /> Xác nhận nộp báo cáo
                 </button>
               </form>
             </div>
           </div>
 
-          {/* History / Admin View */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                <BarChart3 size={18} className="mr-2 text-indigo-600" /> Lịch sử báo cáo
-              </h2>
-              <div className="space-y-4">
-                {dailyReports.length > 0 ? (
-                  dailyReports.slice().reverse().map(report => {
+          {/* New Feed Báo cáo - Right Column */}
+          <div className="xl:col-span-2 space-y-4">
+            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+              <LayoutGrid size={18} className="mr-2 text-indigo-600" /> 
+              {isManager ? 'Bảng tin Báo cáo Toàn Nhóm' : 'Lịch sử Báo cáo của Tôi'}
+            </h2>
+            <div className="space-y-4">
+              {dailyReports.filter(r => isManager || r.staffId === currentStaff?.id).length > 0 ? (
+                dailyReports
+                  .filter(r => isManager || r.staffId === currentStaff?.id)
+                  .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                  .map(report => {
                     const staff = staffList.find(s => s.id === report.staffId);
+                    const completedCount = report.completedTasks?.length ?? report.renderedCount;
+                    const pendingCount = report.pendingTasks?.length || 0;
+                    const isPerfectList = pendingCount === 0;
+
                     return (
-                      <div key={report.id} className="p-4 rounded-lg border border-gray-100 bg-gray-50">
-                        <div className="flex justify-between items-start mb-2">
+                      <div key={report.id} className="p-5 rounded-xl border border-gray-100 bg-white shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:justify-between sm:items-start mb-4 border-b border-gray-50 pb-3">
                           <div className="flex items-center">
-                            <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xs mr-3">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-bold text-sm mr-3 shadow-inner">
                               {(staff?.name || '?').charAt(0)}
                             </div>
                             <div>
                               <p className="text-sm font-bold text-gray-900">{staff?.name}</p>
-                              <p className="text-[10px] text-gray-500">{format(parseISO(report.timestamp), 'HH:mm - dd/MM/yyyy')}</p>
+                              <p className="text-xs text-gray-500 flex items-center">
+                                <Clock size={12} className="mr-1" /> {format(parseISO(report.timestamp), 'HH:mm - dd/MM/yyyy')}
+                              </p>
                             </div>
                           </div>
-                          <div className="bg-white px-3 py-1 rounded-full border border-gray-200 text-xs font-bold text-blue-600">
-                            Rendered: {report.renderedCount}
+                          <div className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center self-start ${isPerfectList ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {isPerfectList ? <CheckCircle size={14} className="mr-1" /> : <AlertCircle size={14} className="mr-1" />}
+                            KPI: {completedCount} Done / {pendingCount} Miss
                           </div>
                         </div>
-                        {report.notes && (
-                          <p className="text-xs text-gray-600 mt-2 pl-11 border-l-2 border-indigo-200 italic">
-                            "{report.notes}"
-                          </p>
+
+                        <div className="space-y-3 bg-gray-50/80 p-4 rounded-lg text-sm border border-gray-100/50">
+                          {report.issues && (
+                            <div>
+                              <span className="font-semibold text-gray-700 block mb-1">Khó khăn / Vấn đề:</span>
+                              <p className="text-gray-600 text-sm italic">{report.issues}</p>
+                            </div>
+                          )}
+                          {!report.issues && report.notes && (
+                            <div>
+                              <span className="font-semibold text-gray-700 block mb-1">Ghi chú:</span>
+                              <p className="text-gray-600 text-sm italic">{report.notes}</p>
+                            </div>
+                          )}
+                          {report.planTomorrow && (
+                            <div>
+                              <span className="font-semibold text-gray-700 block mb-1">🚀 Kế hoạch ngày mai:</span>
+                              <p className="text-gray-600">{report.planTomorrow}</p>
+                            </div>
+                          )}
+                          {report.expenses ? (
+                            <div className="text-orange-600 font-semibold border-t border-orange-100 mt-2 pt-2 flex items-center">
+                              <span className="mr-1">💰</span> Phát sinh chi phí: {report.expenses.toLocaleString()} VND
+                            </div>
+                          ) : null}
+                        </div>
+                        
+                        {/* Expandable Task List */}
+                        {((report.completedTasks && report.completedTasks.length > 0) || (report.pendingTasks && report.pendingTasks.length > 0)) && (
+                           <div className="mt-4 text-xs flex flex-col sm:flex-row gap-4">
+                              {report.completedTasks && report.completedTasks.length > 0 && (
+                                <div className="flex-1 bg-green-50/30 p-3 rounded-lg border border-green-50">
+                                  <p className="text-green-600 font-semibold mb-2">Hôm nay xong ({report.completedTasks.length}):</p>
+                                  <ul className="text-gray-500 list-disc pl-4 space-y-1 max-h-32 overflow-y-auto">
+                                    {report.completedTasks.map(t => <li key={t.id} className="truncate" title={t.title}>{t.title}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {report.pendingTasks && report.pendingTasks.length > 0 && (
+                                <div className="flex-1 bg-red-50/30 p-3 rounded-lg border border-red-50">
+                                  <p className="text-red-600 font-semibold mb-2">Tồn đọng ({report.pendingTasks.length}):</p>
+                                  <ul className="text-gray-500 list-disc pl-4 space-y-1 max-h-32 overflow-y-auto">
+                                    {report.pendingTasks.map(t => <li key={t.id} className="truncate" title={t.title}>{t.title}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                           </div>
                         )}
                       </div>
                     );
                   })
-                ) : (
-                  <div className="text-center py-8 text-gray-400 italic text-sm">
-                    Chưa có báo cáo nào được gửi.
-                  </div>
-                )}
-              </div>
+              ) : (
+                <div className="text-center py-16 text-gray-400 italic text-sm bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+                  <FileText size={32} className="mx-auto text-gray-300 mb-3" />
+                  Chưa có báo cáo nào được gửi hoặc hiển thị.
+                </div>
+              )}
             </div>
           </div>
         </div>

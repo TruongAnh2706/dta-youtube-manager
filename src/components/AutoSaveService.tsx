@@ -93,7 +93,11 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
                     if (itemsToUpsert.length > 0) {
                         const { error } = await supabase.from(table).upsert(itemsToUpsert, { onConflict: 'id' });
                         if (error) {
-                            showToast(`Lỗi AutoSave Upsert [${table}]: ${error.message}`, 'error');
+                            if (error.message.includes('violates unique constraint') && error.message.includes('channel_code_key')) {
+                                showToast('Lỗi: Kênh này đã tồn tại trong hệ thống (Trùng ID Kênh). Vui lòng kiểm tra lại.', 'error');
+                            } else {
+                                showToast(`Lỗi AutoSave Upsert [${table}]: ${error.message}`, 'error');
+                            }
                             console.error(`❌ Lỗi Supabase Sync ${table}:`, error);
                         } else {
                             console.log(`✅ [AutoSave] Đã cập nhật ${itemsToUpsert.length} records lên ${table}`);

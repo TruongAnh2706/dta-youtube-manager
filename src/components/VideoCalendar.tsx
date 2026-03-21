@@ -149,7 +149,8 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (editingTask) {
+    const isVirtual = editingTask && editingTask.id.toString().startsWith('virtual-');
+    if (editingTask && !isVirtual) {
       setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...formData } : t));
       showToast('Đã cập nhật lịch đăng video thành công!', 'success');
     } else {
@@ -160,6 +161,10 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
   };
 
   const handleDelete = async (id: string) => {
+    if (id.toString().startsWith('virtual-')) {
+      showToast('Không thể xóa trực tiếp lịch định kỳ. Vào Kênh để sửa lịch mẫu.', 'warning');
+      return;
+    }
     if (confirm('Bạn có chắc chắn muốn xóa lịch đăng này?')) {
       setTasks(prev => prev.filter(t => t.id !== id));
       
@@ -215,11 +220,85 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
   const currentUserStaff = staffList.find(s => s.name === currentUser?.name);
   const canViewAll = hasPermission('calendar_view_all');
 
+  const virtualTasks = useMemo(() => {
+    const vTasks: VideoTask[] = [];
+    const _monthStart = startOfMonth(currentDate);
+    const _monthEnd = endOfMonth(_monthStart);
+    const _startDate = startOfWeek(_monthStart, { weekStartsOn: 1 });
+    const _endDate = endOfWeek(_monthEnd, { weekStartsOn: 1 });
+
+    const _calendarDays = eachDayOfInterval({ start: _startDate, end: _endDate });
+    const realTaskKeys = new Set(tasks.map(t => `${t.channelId}-${t.dueDate}-${t.publishTime}`));
+
+    channels.forEach(channel => {
+      if (channel.postingSchedules && channel.postingSchedules.length > 0) {
+        channel.postingSchedules.forEach(schedule => {
+          const dayMap: { [key: string]: number } = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+          const targetDays = schedule.days.map(d => dayMap[d]);
+
+          _calendarDays.forEach(day => {
+            if (targetDays.includes(day.getDay())) {
+               const dateStr = format(day, 'yyyy-MM-dd');
+               const key = `${channel.id}-${dateStr}-${schedule.time}`;
+               if (!realTaskKeys.has(key)) {
+                 vTasks.push({
+                   id: `virtual-${channel.id}-${day.getTime()}-${schedule.time}`,
+                   title: `[Lịch Định Kỳ] ${channel.name}`,
+                   channelId: channel.id,
+                   status: 'pending', 
+                   assigneeIds: [],
+                   dueDate: dateStr,
+                   publishTime: schedule.time,
+                   videoType: 'long',
+                   isClaimable: false,
+                   priority: 'medium',
+                   productionCost: 0,
+                   notes: 'Lịch đăng định kỳ (Hệ thống tự tạo)',
+                   scriptLink: '',
+                   thumbnailLink: '',
+                   scriptOutline: ''
+                 });
+               }
+            }
+          });
+        });
+      }
+    });
+    return vTasks;
+  }, [channels, currentDate, tasks]);
+
   const viewableTasks = useMemo(() => {
-    if (canViewAll) return tasks;
-    if (!currentUserStaff) return [];
-    return tasks.filter(t => (t.assigneeIds || []).includes(currentUserStaff.id));
-  }, [tasks, canViewAll, currentUserStaff]);
+    let list: VideoTask[] = [];
+
+    // Lọc ra các ID của Kênh có bật Lịch Đăng Định Kỳ
+    const activeScheduleChannelIds = channels
+      .filter(c => c.postingSchedules && c.postingSchedules.length > 0)
+      .map(c => c.id);
+
+    // Chỉ những task (cả gốc lẫn tùy biến) thuộc về kênh có Lịch đăng mới được xuất hiện
+    const validTasks = tasks.filter(t => activeScheduleChannelIds.includes(t.channelId));
+    // virtualTasks vốn dĩ đã được gen từ mảng các kênh có lịch đăng rồi, nên không cần lọc lại ID
+
+    if (canViewAll) {
+       list = [...validTasks, ...virtualTasks];
+    } else if (currentUserStaff) {
+       // Nhân viên chỉ thấy task của mình được giao HOẶC task thuộc Kênh mà họ quản lý
+       const myChannels = currentUserStaff.assignedChannelIds || [];
+       
+       const myTasks = validTasks.filter(t => 
+         (t.assigneeIds || []).includes(currentUserStaff.id) || 
+         myChannels.includes(t.channelId)
+       );
+       
+       const myVirtuals = virtualTasks.filter(t => 
+         myChannels.includes(t.channelId)
+       );
+
+       list = [...myTasks, ...myVirtuals];
+    }
+    // Lọc bỏ triệt để các Task mang Marker '[DELETED]' (để ẩn khỏi UI và không tính KPI)
+    return list.filter(t => !t.title.startsWith('[DELETED]'));
+  }, [tasks, virtualTasks, canViewAll, currentUserStaff]);
 
   const displayStaffList = useMemo(() => {
     if (canViewAll) return staffList;
@@ -363,6 +442,10 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
               const dayTasks = filteredTasks.filter(t => isSameDay(new Date(t.dueDate), day));
               const isCurrentMonth = isSameMonth(day, currentDate);
               const isTodayDay = isToday(day);
+              
+              const now = new Date();
+              now.setHours(0, 0, 0, 0);
+              const isPastDay = day < now;
 
               return (
                 <div
@@ -372,8 +455,11 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
                       setSelectedDay(day);
                     }
                   }}
-                  className={`min-h-[100px] border-r border-b border-gray-100 p-2 transition-colors cursor-pointer hover:bg-gray-50/50 group ${!isCurrentMonth ? 'bg-gray-50/30' : ''
-                    } ${isTodayDay ? 'bg-blue-50/10' : ''}`}
+                  className={`min-h-[100px] border-r border-b border-gray-100 p-2 transition-colors cursor-pointer hover:bg-gray-50/50 group 
+                    ${!isCurrentMonth ? 'bg-gray-50/30' : ''} 
+                    ${isTodayDay ? 'bg-blue-50 border-2 border-blue-400' : ''} 
+                    ${isPastDay && !isTodayDay ? 'opacity-50 grayscale bg-gray-50/60' : ''}
+                  `}
                 >
                   <div className="flex justify-between items-center mb-2">
                     <span className={`text-xs font-bold ${isTodayDay ? 'bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center' :
@@ -736,6 +822,11 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
                                 [{channel.channelCode}]
                               </span>
                             )}
+                            {task.id.toString().startsWith('virtual-') && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-500">
+                                ĐỊNH KỲ
+                              </span>
+                            )}
                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${task.videoType === 'shorts' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
                               {task.videoType === 'shorts' ? 'SHORTS' : 'LONG VIDEO'}
                             </span>
@@ -757,20 +848,29 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
 
                       <div className="flex flex-col items-start md:items-end mt-4 md:mt-0 shrink-0">
                          <div className="flex items-center gap-2 mb-2">
-                            {task.assigneeIds.length > 0 ? (
-                              <div className="flex -space-x-2">
-                                {task.assigneeIds.map(id => {
-                                  const staff = staffList.find(s => s.id === id);
-                                  return staff ? (
-                                    <div key={id} className="w-6 h-6 rounded-full bg-blue-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-blue-700" title={staff.name}>
-                                      {staff.name.charAt(0)}
+                            {(() => {
+                               const channelStaffIds = staffList.filter(s => s.assignedChannelIds?.includes(channel?.id || '')).map(s => s.id);
+                               const effectiveAssignees = task.assigneeIds && task.assigneeIds.length > 0 
+                                  ? task.assigneeIds 
+                                  : channelStaffIds;
+                               
+                               if (effectiveAssignees.length > 0) {
+                                  return (
+                                    <div className="flex flex-col items-end gap-1">
+                                      {effectiveAssignees.map(id => {
+                                        const staff = staffList.find(s => s.id === id);
+                                        return staff ? (
+                                          <div key={id} className="flex items-center text-[11px] text-gray-600 bg-gray-50 px-2 py-0.5 rounded border border-gray-100 shrink-0">
+                                            <User size={10} className="mr-1 text-gray-400" />
+                                            <span className="font-medium whitespace-nowrap">{staff.name}</span>
+                                          </div>
+                                        ) : null;
+                                      })}
                                     </div>
-                                  ) : null;
-                                })}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-gray-400 italic">Chưa phân công</span>
-                            )}
+                                  );
+                               }
+                               return <span className="text-xs text-gray-400 italic">Chưa phân công</span>;
+                            })()}
                          </div>
                          <div className={`px-2 py-1 flex items-center text-xs font-bold rounded-full ${isPublished ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
                            {isPublished ? <CheckCircle2 size={12} className="mr-1" /> : <Loader size={12} className="mr-1 animate-spin-slow" />}

@@ -1,3 +1,8 @@
+export type PostingSchedule = {
+  time: string; // HH:mm
+  days: string[]; // ['Mon', 'Tue', ...]
+};
+
 export type Topic = {
   id: string;
   name: string;
@@ -13,6 +18,7 @@ export type Topic = {
   competitionLevel?: 'low' | 'medium' | 'high';
   niche?: string; // Tên thị trường ngách lớn
   assignees?: string[]; // Danh sách ID các nhân sự được giao quản lý chủ đề này
+  defaultSchedules?: PostingSchedule[]; // Lịch đăng mẫu
 };
 
 export const DEFAULT_NICHES = [
@@ -49,10 +55,7 @@ export type Channel = {
   recoveryEmail?: string;
   twoFactorCode?: string;
   proxyId?: string;
-  postingSchedules?: {
-    time: string; // HH:mm
-    days: string[]; // ['Mon', 'Tue', ...]
-  }[];
+  postingSchedules?: PostingSchedule[];
 };
 
 export type YoutubeVideo = {
@@ -167,6 +170,11 @@ export type DailyReport = {
   renderedCount: number;
   notes: string;
   timestamp: string;
+  completedTasks?: { id: string; title: string }[];
+  pendingTasks?: { id: string; title: string }[];
+  issues?: string;
+  expenses?: number;
+  planTomorrow?: string;
 };
 
 export type FinancialRecord = {

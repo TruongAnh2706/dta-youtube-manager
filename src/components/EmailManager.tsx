@@ -1,10 +1,10 @@
 import React, { useState, useRef } from 'react';
 import { 
   Search, Plus, Upload, Download, Trash2, Edit2, ShieldAlert,
-  Save, X, FileDown, CheckCircle2, Clock, AlertTriangle, PlayCircle, Eye, EyeOff, Copy
+  Save, X, FileDown, CheckCircle2, Clock, AlertTriangle, PlayCircle, Eye, EyeOff, Copy, ExternalLink
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { ManagedEmail, Staff, Topic, VideoTask } from '../types';
+import { ManagedEmail, Staff, Topic, VideoTask, Channel } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import { supabase } from '../lib/supabase';
@@ -18,17 +18,20 @@ interface EmailManagerProps {
   tasks: VideoTask[];
   setTasks: React.Dispatch<React.SetStateAction<VideoTask[]>>;
   systemSettings?: import('../types').SystemSettings;
+  channels?: Channel[];
 }
 
-export function EmailManager({ emails, setEmails, staffList, topics, currentUser, tasks, setTasks, systemSettings }: EmailManagerProps) {
+export function EmailManager({ emails, setEmails, staffList, topics, currentUser, tasks, setTasks, systemSettings, channels = [] }: EmailManagerProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterStaff, setFilterStaff] = useState<string>('all');
+  const [filterHasChannel, setFilterHasChannel] = useState<string>('all');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState<ManagedEmail | null>(null);
+  const [viewingEmail, setViewingEmail] = useState<ManagedEmail | null>(null);
   
   const [formData, setFormData] = useState<Omit<ManagedEmail, 'id' | 'createdAt'>>({
     email: '', password: '', recoveryEmail: '', twoFactorAuth: '', 
@@ -38,10 +41,18 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isBulkImporting, setIsBulkImporting] = useState(false);
   const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({});
+  
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
 
   const handleOpenModal = (email?: ManagedEmail) => {
     if (email) {
       setEditingEmail(email);
+      
+      // Đảm bảo status là hợp lệ (có trong danh sách systemSettings)
+      const isValidStatus = systemSettings?.emailStatuses?.some(s => s.id === email.status);
+      const safeStatus = isValidStatus ? email.status : (systemSettings?.emailStatuses?.[0]?.id || 'new');
+      
       setFormData({
         email: email.email,
         password: email.password || '',
@@ -49,7 +60,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
         twoFactorAuth: email.twoFactorAuth || '',
         verificationPhone: email.verificationPhone || '',
         assignedTo: email.assignedTo || '',
-        status: email.status || 'new',
+        status: safeStatus,
         notes: email.notes || '',
         targetTopicIds: email.targetTopicIds || [],
         channelCode: email.channelCode || ''
@@ -300,6 +311,71 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     reader.readAsBinaryString(file);
   };
 
+  const handlePasteImport = () => {
+    if (!pasteText.trim()) {
+      showToast('Vui lòng nhập nội dung dữ liệu', 'error');
+      return;
+    }
+
+    const lines = pasteText.split('\n').filter(line => line.trim());
+    if (lines.length === 0) return;
+
+    const current4TCodes = [...emails]
+      .map(em => em.channelCode || '')
+      .filter(code => /^4T\d+$/i.test(code))
+      .map(code => parseInt(code.substring(2), 10))
+      .filter(num => !isNaN(num));
+    
+    let nextCodeNum = current4TCodes.length > 0 ? Math.max(...current4TCodes) + 1 : 1;
+
+    let addedCount = 0;
+    let skipCount = 0;
+    const newEmails: ManagedEmail[] = [];
+    const statusVal = systemSettings?.emailStatuses?.[0]?.id || 'new';
+
+    lines.forEach(line => {
+      const parts = line.split('|').map(p => p.trim());
+      if (parts.length === 0 || !parts[0]) return;
+      
+      const emailStr = parts[0];
+      const isExist = emails.some(e => e.email.toLowerCase() === emailStr.toLowerCase()) || 
+                      newEmails.some(e => e.email.toLowerCase() === emailStr.toLowerCase());
+      
+      if (isExist) {
+        skipCount++;
+        return;
+      }
+
+      const formattedNum = nextCodeNum < 10 ? `0${nextCodeNum}` : `${nextCodeNum}`;
+      const channelCodeStr = `4T${formattedNum}`;
+      nextCodeNum++;
+
+      newEmails.push({
+        id: `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        channelCode: channelCodeStr,
+        email: emailStr,
+        password: parts[1] || '',
+        recoveryEmail: parts[2] || '',
+        twoFactorAuth: parts[3] || '',
+        verificationPhone: '',
+        notes: parts[4] || '', // Quốc gia hoặc ghi chú
+        status: statusVal,
+        targetTopicIds: [],
+        createdAt: new Date().toISOString()
+      });
+      addedCount++;
+    });
+
+    if (newEmails.length > 0) {
+      setEmails(prev => [...newEmails, ...prev]);
+      showToast(`Đã thêm thành công ${addedCount} email. Bỏ qua ${skipCount} trùng lặp.`, 'success');
+      setPasteText('');
+      setIsPasteModalOpen(false);
+    } else {
+      showToast(`Không có email mới nào được phát hiện hợp lệ.`, 'error');
+    }
+  };
+
   const filteredEmails = emails.filter(em => {
     const matchesSearch = em.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           (em.notes || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -311,7 +387,15 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
       if (currentUser && em.assignedTo === currentUser.id) isAllowed = true;
     }
 
-    const matchesStaff = filterStaff === 'all' || em.assignedTo === filterStaff;
+    const matchesStaff = filterStaff === 'all' 
+      ? true 
+      : filterStaff === ''
+        ? (!em.assignedTo || em.assignedTo === '')
+        : em.assignedTo === filterStaff;
+
+    const isLinked = channels?.some(c => c.email?.toLowerCase() === em.email.toLowerCase());
+    if (filterHasChannel === 'linked' && !isLinked) return false;
+    if (filterHasChannel === 'unlinked' && isLinked) return false;
 
     return matchesSearch && matchesStatus && matchesStaff && isAllowed;
   });
@@ -341,6 +425,9 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
               <button onClick={downloadTemplate} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
                 <FileDown size={16} className="mr-2" /> File mẫu
               </button>
+              <button onClick={() => setIsPasteModalOpen(true)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
+                <FileDown size={16} className="mr-2" /> Nhập Nhanh
+              </button>
               <label className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors cursor-pointer">
                 <Upload size={16} className="mr-2" /> Nhập Excel
                 <input type="file" accept=".xlsx, .xls, .csv" className="hidden" onChange={handleBulkImport} disabled={isBulkImporting} />
@@ -358,6 +445,11 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input type="text" placeholder="Tìm email hoặc ghi chú..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
+        <select value={filterHasChannel} onChange={e => setFilterHasChannel(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
+          <option value="all">Tất cả liên kết kênh</option>
+          <option value="linked">Đã lập kênh</option>
+          <option value="unlinked">Chưa lập kênh</option>
+        </select>
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
           <option value="all">Tất cả trạng thái</option>
           {(systemSettings?.emailStatuses || []).map(s => (
@@ -423,7 +515,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                 )}
                 <th className="p-3 font-medium w-24">Mã Kênh</th>
                 <th className="p-3 font-medium min-w-[200px]">Email</th>
-                <th className="p-3 font-medium min-w-[250px]">Bảo mật</th>
+                <th className="p-3 font-medium min-w-[220px]">Kênh liên kết</th>
                 <th className="p-3 font-medium w-36">Nhân sự</th>
                 <th className="p-3 font-medium w-36">Trạng thái</th>
                 <th className="p-3 font-medium min-w-[150px]">Ghi chú</th>
@@ -451,7 +543,15 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                       </td>
                     )}
                     <td className="p-3">
-                      <div className="font-semibold text-gray-800 text-xs bg-gray-100 px-2 py-1 rounded w-fit">{email.channelCode || '-'}</div>
+                      <div className="flex flex-col gap-1.5 items-start">
+                         {email.channelCode ? (
+                           <div className="font-semibold text-blue-800 text-xs bg-blue-100 border border-blue-200 px-2 py-1 rounded w-fit">
+                             {email.channelCode}
+                           </div>
+                         ) : (
+                           <div className="font-semibold text-gray-800 text-xs bg-gray-100 px-2 py-1 rounded w-fit">-</div>
+                         )}
+                      </div>
                     </td>
                     <td className="p-3">
                       <div className="font-medium text-gray-900 break-all">{email.email}</div>
@@ -462,59 +562,31 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                       )}
                     </td>
                     <td className="p-3">
-                      <div className="flex flex-col gap-1.5 min-w-[180px]">
-                        <div className="flex items-center text-xs font-mono bg-gray-50 px-2 py-1 rounded-md w-fit group border border-gray-100">
-                          <span className="mr-2 text-gray-700 min-w-[36px]">Pass:</span>
-                          <span className="font-semibold text-blue-700 select-all">{isPasswordVisible ? (email.password || '---') : '••••••••'}</span>
-                          <div className="ml-2 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => setShowPasswords(prev => ({...prev, [email.id]: !prev[email.id]}))}
-                              className="text-gray-400 hover:text-blue-600 focus:outline-none"
-                              title={isPasswordVisible ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-                            >
-                              {isPasswordVisible ? <EyeOff size={14} /> : <Eye size={14} />}
-                            </button>
-                            {email.password && (
-                              <button 
-                                onClick={() => handleCopy(email.password, 'mật khẩu')}
-                                className="text-gray-400 hover:text-blue-600 focus:outline-none"
-                                title="Sao chép mật khẩu"
-                              >
-                                <Copy size={13} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {(email.recoveryEmail || !!email.twoFactorAuth) && (
-                          <div className="flex flex-col gap-1 text-[11px] text-gray-500">
-                            {email.recoveryEmail && (
-                              <div className="flex items-center">
-                                <span className="min-w-[36px]">KP:</span>
-                                <span className="select-all text-gray-600">{email.recoveryEmail}</span>
-                                <button onClick={() => handleCopy(email.recoveryEmail, 'email khôi phục')} className="ml-1.5 text-gray-400 hover:text-blue-600">
-                                   <Copy size={11} />
-                                </button>
+                      {(() => {
+                        const linkedChannel = channels?.find(c => c.email?.toLowerCase() === email.email.toLowerCase());
+                        if (linkedChannel) {
+                          return (
+                            <div className="flex items-center gap-3">
+                              {linkedChannel.avatarUrl ? (
+                                <a href={linkedChannel.url || '#'} target="_blank" rel="noopener noreferrer" className="shrink-0 hover:opacity-80 transition-opacity" title="Mở YouTube">
+                                  <img src={linkedChannel.avatarUrl} className="w-10 h-10 rounded-full object-cover shadow-sm border border-gray-200" referrerPolicy="no-referrer" />
+                                </a>
+                              ) : (
+                                <a href={linkedChannel.url || '#'} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0 border border-blue-200 hover:bg-blue-200 transition-colors" title="Mở YouTube">
+                                  <PlayCircle size={20} className="text-blue-600" />
+                                </a>
+                              )}
+                              <div className="flex flex-col min-w-0">
+                                <a href={linkedChannel.url || '#'} target="_blank" rel="noopener noreferrer" className="font-bold text-sm text-gray-900 hover:text-blue-600 transition-colors line-clamp-2" title={linkedChannel.name}>
+                                  {linkedChannel.name}
+                                </a>
+                                <span className="text-[10px] text-green-600 font-medium flex items-center mt-0.5"><CheckCircle2 size={10} className="mr-1" /> Đã liên kết</span>
                               </div>
-                            )}
-                            {email.twoFactorAuth && (
-                              <div className="flex items-center group/2fa w-fit">
-                                <span className="min-w-[36px]">2FA:</span>
-                                <span className="font-mono text-gray-700 select-all">{isPasswordVisible ? email.twoFactorAuth : '••••••••'}</span>
-                                {isPasswordVisible && (
-                                   <button 
-                                     onClick={() => handleCopy(email.twoFactorAuth, 'mã 2FA')}
-                                     className="ml-2 md:opacity-0 md:group-hover/2fa:opacity-100 transition-opacity text-gray-400 hover:text-blue-600"
-                                     title="Sao chép mã 2FA"
-                                   >
-                                     <Copy size={11} />
-                                   </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                            </div>
+                          );
+                        }
+                        return <span className="text-xs text-gray-400 italic">Chưa liên kết</span>;
+                      })()}
                     </td>
                     <td className="p-3">
                       {staff ? (
@@ -535,6 +607,9 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                     </td>
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center space-x-1">
+                        <button onClick={() => setViewingEmail(email)} className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" title="Xem chi tiết">
+                          <Eye size={16} />
+                        </button>
                         <button onClick={() => handleOpenModal(email)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Sửa">
                           <Edit2 size={16} />
                         </button>
@@ -559,6 +634,80 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
           </table>
         </div>
       </div>
+
+      {viewingEmail && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                <Search size={18} className="mr-2 text-blue-500" /> Chi tiết Email
+              </h3>
+              <button onClick={() => setViewingEmail(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Email đăng nhập</label>
+                <div className="font-medium text-gray-900 text-base">{viewingEmail.email}</div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Mật khẩu</label>
+                  <div className="font-mono text-blue-700 bg-white px-2 py-1 rounded border border-gray-200 mt-1 select-all">{viewingEmail.password || '-'}</div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Trạng thái</label>
+                  <div className="mt-1">{getStatusBadge(viewingEmail.status)}</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Email Khôi phục</label>
+                  <div className="text-gray-800 text-sm mt-1 break-all bg-gray-50 px-2 py-1 rounded select-all">{viewingEmail.recoveryEmail || '-'}</div>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Mã 2FA</label>
+                  <div className="text-gray-800 text-sm mt-1 bg-gray-50 px-2 py-1 rounded font-mono select-all">{viewingEmail.twoFactorAuth || '-'}</div>
+                </div>
+              </div>
+              {(() => {
+                const linkedChannel = channels?.find(c => c.email?.toLowerCase() === viewingEmail.email.toLowerCase());
+                if (linkedChannel) {
+                  return (
+                    <div className="bg-green-50 border border-green-200 p-3 rounded-lg mt-2">
+                       <label className="text-xs font-bold text-green-800 uppercase flex items-center mb-2"><CheckCircle2 size={14} className="mr-1" /> Kênh đã liên kết</label>
+                       <div className="flex items-center justify-between">
+                         <div className="flex items-center gap-2">
+                           {linkedChannel.avatarUrl ? (
+                              <img src={linkedChannel.avatarUrl} className="w-8 h-8 rounded-full border border-green-200" referrerPolicy="no-referrer" />
+                           ) : (
+                              <div className="w-8 h-8 rounded-full bg-green-200 flex items-center justify-center shrink-0 border border-green-300"><PlayCircle size={16} className="text-green-700" /></div>
+                           )}
+                           <span className="font-bold text-green-900">{linkedChannel.name}</span>
+                         </div>
+                         <a href={linkedChannel.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs bg-white text-green-700 px-2 py-1 rounded shadow-sm border border-green-200 hover:bg-green-100">
+                           Mở kênh <ExternalLink size={12}/>
+                         </a>
+                       </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              {viewingEmail.notes && (
+                <div>
+                  <label className="text-xs font-bold text-gray-500 uppercase">Ghi chú</label>
+                  <div className="text-gray-700 text-sm mt-1 p-2 bg-yellow-50 border border-yellow-100 rounded-lg">{viewingEmail.notes}</div>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end bg-gray-50">
+              <button onClick={() => setViewingEmail(null)} className="px-5 py-2 text-gray-700 hover:bg-gray-200 rounded-lg font-medium transition-colors">Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -630,6 +779,45 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
               </button>
               <button type="submit" form="emailForm" className="px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors flex items-center">
                 <Save size={18} className="mr-2" /> Lưu Email
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isPasteModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center">
+                <FileDown size={20} className="mr-2 text-emerald-600" /> Nhập Dữ Liệu Nhanh (Paste Text)
+              </h3>
+              <button onClick={() => setIsPasteModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4 text-sm text-blue-800">
+                <p>Mỗi email nhập trên 1 dòng. Cấu trúc yêu cầu được phân tách bằng dấu gạch đứng <code className="bg-blue-100 px-1 font-bold">|</code></p>
+                <p className="font-mono mt-1 text-blue-900 font-semibold text-xs">Email | Mật khẩu | Email khôi phục | Mã 2FA | Quốc gia (Ghi chú)</p>
+                <ul className="list-disc ml-5 mt-2 opacity-80 text-xs space-y-1">
+                  <li>Mã kênh sẽ được tự động tạo theo định dạng <strong>4T[số thứ tự tiếp theo]</strong> (VD: 4T01, 4T300).</li>
+                  <li>Nếu thiếu dữ liệu (VD: Không có quốc gia), chỉ cần bỏ qua hoặc nhập như: <code className="font-mono bg-blue-100 px-1">email|pass|recovery|2fa</code></li>
+                </ul>
+              </div>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                placeholder="Ví dụ:&#10;BridgefordEdis@gmail.com|akswn3nreo|mawlwdnotha1@hotmail.com|ab267yvougv|South Korea&#10;petschMorano@gmail.com|uk28ws8lrdu|buni@outlook.com|efhnxep"
+                className="w-full h-64 border border-gray-300 rounded-lg p-4 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 whitespace-pre overflow-x-auto"
+              />
+            </div>
+            <div className="p-4 border-t border-gray-100 flex justify-end space-x-3 bg-gray-50">
+              <button onClick={() => setIsPasteModalOpen(false)} className="px-5 py-2.5 text-gray-700 hover:bg-gray-200 rounded-lg font-medium transition-colors">
+                Hủy
+              </button>
+              <button onClick={handlePasteImport} className="px-5 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium transition-colors flex items-center">
+                <Save size={18} className="mr-2" /> Phân tích & Thêm
               </button>
             </div>
           </div>

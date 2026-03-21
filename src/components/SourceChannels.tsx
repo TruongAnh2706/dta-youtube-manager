@@ -140,6 +140,19 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     setSelectedIds([]);
   };
 
+  const handleBulkRemoveStaffSubmit = () => {
+    if (confirm(`Bạn có chắc chắn muốn thu hồi quyền xem của TẤT CẢ nhân sự khỏi ${selectedIds.length} kênh nguồn đã chọn?`)) {
+      setSourceChannels(prev => prev.map(c => {
+        if (selectedIds.includes(c.id)) {
+          return { ...c, allowedStaffIds: [] };
+        }
+        return c;
+      }));
+      showToast(`Đã thu hồi toàn bộ quyền xem gốc cho ${selectedIds.length} kênh nguồn.`, 'info');
+      setSelectedIds([]);
+    }
+  };
+
   const handleOpenAssignTask = (channelsToAssign: SourceChannel[]) => {
     if (channelsToAssign.length === 0) return;
     setAssignTaskChannelIds(channelsToAssign.map(c => c.id));
@@ -1060,9 +1073,14 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
               Gắn Chủ đề
             </button>
             {hasPermission('sources_edit') && (
-              <button onClick={() => { setBulkActionStaffIds([]); setIsBulkStaffModalOpen(true); }} className="px-3 py-1.5 bg-orange-600 text-white rounded text-sm hover:bg-orange-700 transition-colors">
-                Phân Quyền Xem
-              </button>
+              <>
+                <button onClick={() => { setBulkActionStaffIds([]); setIsBulkStaffModalOpen(true); }} className="px-3 py-1.5 bg-orange-600 text-white rounded text-sm hover:bg-orange-700 transition-colors">
+                  Phân Quyền Xem
+                </button>
+                <button onClick={handleBulkRemoveStaffSubmit} className="px-3 py-1.5 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 transition-colors">
+                  Thu hồi Quyền
+                </button>
+              </>
             )}
             <button onClick={() => handleOpenAssignTask(sourceChannels.filter(c => selectedIds.includes(c.id)))} className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors flex items-center">
               <ClipboardList size={14} className="mr-1" /> Giao Task

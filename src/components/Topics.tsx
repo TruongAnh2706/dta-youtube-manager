@@ -3,7 +3,7 @@ import { Plus, Search, Layers } from 'lucide-react';
 import { TopicCard } from './topics/TopicCard';
 import { TopicModal } from './topics/TopicModal';
 import { TopicFilters } from './topics/TopicFilters';
-import { Topic, Staff, DEFAULT_NICHES } from '../types';
+import { Topic, Staff, DEFAULT_NICHES, Channel, SourceChannel } from '../types';
 import { supabase } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
@@ -12,9 +12,12 @@ interface TopicsProps {
   topics: Topic[];
   setTopics: React.Dispatch<React.SetStateAction<Topic[]>>;
   staffList: Staff[];
+  channels: Channel[];
+  sourceChannels: SourceChannel[];
+  youtubeApiKey: string;
 }
 
-export function Topics({ topics = [], setTopics, staffList }: TopicsProps) {
+export function Topics({ topics = [], setTopics, staffList, channels, sourceChannels, youtubeApiKey }: TopicsProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -160,6 +163,9 @@ export function Topics({ topics = [], setTopics, staffList }: TopicsProps) {
         onSubmit={handleModalSubmit}
         editingTopic={editingTopic}
         staffList={staffList}
+        channels={channels}
+        sourceChannels={sourceChannels}
+        youtubeApiKey={youtubeApiKey}
       />
     </div>
   );

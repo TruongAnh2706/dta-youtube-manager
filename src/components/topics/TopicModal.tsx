@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Topic, DEFAULT_NICHES, Staff } from '../../types';
-import { X, Layers, Info, Globe, Tag, Plus, Target, Users } from 'lucide-react';
+import { Topic, DEFAULT_NICHES, Staff, Channel, SourceChannel } from '../../types';
+import { X, Layers, Info, Globe, Tag, Plus, Target, Users, Clock, RefreshCw, Copy } from 'lucide-react';
+import { fetchYoutubeChannelInfo, sleep } from '../../services/youtube';
 
 interface TopicModalProps {
   isOpen: boolean;
@@ -8,9 +9,12 @@ interface TopicModalProps {
   onSubmit: (topic: Omit<Topic, 'id'>) => void;
   editingTopic: Topic | null;
   staffList: Staff[];
+  channels: Channel[];
+  sourceChannels: SourceChannel[];
+  youtubeApiKey: string;
 }
 
-export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList }: TopicModalProps) {
+export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList, channels, sourceChannels, youtubeApiKey }: TopicModalProps) {
   const [formData, setFormData] = useState<Omit<Topic, 'id'>>({
     name: '',
     description: '',
@@ -24,7 +28,8 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList 
     monetizationPotential: 'medium',
     competitionLevel: 'medium',
     niche: '',
-    assignees: []
+    assignees: [],
+    defaultSchedules: []
   });
 
   const [tagInput, setTagInput] = useState('');
@@ -45,7 +50,8 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList 
         monetizationPotential: editingTopic.monetizationPotential || 'medium',
         competitionLevel: editingTopic.competitionLevel || 'medium',
         niche: editingTopic.niche || '',
-        assignees: editingTopic.assignees || []
+        assignees: editingTopic.assignees || [],
+        defaultSchedules: editingTopic.defaultSchedules || []
       });
     } else {
       setFormData({
@@ -61,7 +67,8 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList 
         monetizationPotential: 'medium',
         competitionLevel: 'medium',
         niche: '',
-        assignees: []
+        assignees: [],
+        defaultSchedules: []
       });
     }
   }, [editingTopic, isOpen]);
@@ -93,6 +100,144 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList 
 
   const removeHashtag = (tagToRemove: string) => {
     setFormData({ ...formData, hashtags: formData.hashtags.filter(t => t !== tagToRemove) });
+  };
+
+  const [isFetchingTags, setIsFetchingTags] = useState(false);
+  const [scanProgress, setScanProgress] = useState<{current: number, total: number, channelName: string, tagsFound: number, hashtagsFound: number} | null>(null);
+
+  // Auto quét Tag từ các kênh
+  const fetchTagsFromChannels = async () => {
+    if (!editingTopic || !editingTopic.id) {
+       alert("Vui lòng lưu chủ đề này trước rồi mới quét được kênh đối thủ (vì chủ đề mới chưa liên kết kênh nào).");
+       return;
+    }
+    
+    // Đã đính chính: Tìm kênh Nguồn/Đối thủ (sourceChannels)
+    const topicChannels = sourceChannels.filter(c => c.topicIds && c.topicIds.includes(editingTopic.id));
+    if (topicChannels.length === 0) {
+       alert("Chủ đề này hiện chưa có kênh đối thủ / kênh nguồn nào. Bạn cần vào tab Kênh Nguồn để gán kênh vào chủ đề trước.");
+       return;
+    }
+
+    if (!youtubeApiKey) {
+       alert("Lỗi: Không tìm thấy Youtube API Key. Vui lòng cài đặt tại Settings.");
+       return;
+    }
+
+    setIsFetchingTags(true);
+    
+    // Sử dụng Map để đếm tần suất thay vì Set
+    let tagCounts = new Map<string, number>();
+    let hashtagCounts = new Map<string, number>();
+    let tempTagsFound = 0;
+    let tempHashtagsFound = 0;
+
+    setScanProgress({ current: 0, total: topicChannels.length, channelName: 'Đang khởi tạo...', tagsFound: 0, hashtagsFound: 0 });
+    
+    try {
+      for (let i = 0; i < topicChannels.length; i++) {
+         const channel = topicChannels[i];
+         if (!channel.url) continue;
+         
+         setScanProgress({ 
+            current: i + 1, 
+            total: topicChannels.length, 
+            channelName: channel.name, 
+            tagsFound: tempTagsFound, 
+            hashtagsFound: tempHashtagsFound 
+         });
+
+         try {
+           const info = await fetchYoutubeChannelInfo(channel.url, youtubeApiKey, false);
+           if (info.channelKeywords) {
+             const keywords = info.channelKeywords.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+             keywords.forEach(k => {
+               const kw = k.replace(/"/g, '').trim();
+               if (kw) {
+                 tagCounts.set(kw, (tagCounts.get(kw) || 0) + 1);
+                 tempTagsFound++;
+               }
+             });
+           }
+           
+           info.latestVideos.forEach(v => {
+             // Thêm Tag, đếm tần suất
+             if (v.tags) {
+                v.tags.forEach(t => {
+                   const tw = t.trim();
+                   if (tw) {
+                     tagCounts.set(tw, (tagCounts.get(tw) || 0) + 1);
+                     tempTagsFound++;
+                   }
+                });
+             }
+             
+             // Parse Hashtag từ mô tả video
+             const hashMatches = v.description.match(/#[^\s#]+/g);
+             if (hashMatches) {
+               hashMatches.forEach((h: string) => {
+                 const cleanH = h.substring(1).toUpperCase();
+                 if (cleanH.length > 1) {
+                   hashtagCounts.set(cleanH, (hashtagCounts.get(cleanH) || 0) + 1);
+                   tempHashtagsFound++;
+                 }
+               });
+             }
+           });
+           
+           await sleep(1000); // Tránh rate limit
+         } catch (e) {
+           console.log("Lỗi khi quét kênh", channel.name, e);
+         }
+      }
+      
+      // Sort tags and hashtags by frequency (descending)
+      const sortedTags = Array.from(tagCounts.entries())
+                              .sort((a, b) => b[1] - a[1])
+                              .map(e => e[0]);
+      
+      const sortedHashtags = Array.from(hashtagCounts.entries())
+                                  .sort((a, b) => b[1] - a[1])
+                                  .map(e => e[0]);
+
+      // Merge avoiding duplicates and keep under limits
+      const finalTags = [...formData.tags];
+      for (const t of sortedTags) {
+         if (!finalTags.includes(t)) finalTags.push(t);
+         if (finalTags.length >= 30) break;
+      }
+
+      const finalHashtags = [...formData.hashtags];
+      for (const h of sortedHashtags) {
+         if (!finalHashtags.includes(h)) finalHashtags.push(h);
+         if (finalHashtags.length >= 20) break;
+      }
+      
+      setFormData({ 
+        ...formData, 
+        tags: finalTags,
+        hashtags: finalHashtags
+      });
+      alert(`Đã quét xong! Phân tích hàng trăm từ khóa và đã nạp thành công ${finalTags.length - formData.tags.length} Tag xịn nhất cùng ${finalHashtags.length - formData.hashtags.length} Hashtag phổ biến nhất (Đã lọc tần suất).`);
+      
+    } catch (error) {
+       alert("Có lỗi xảy ra: " + error);
+    } finally {
+       setIsFetchingTags(false);
+       setScanProgress(null);
+    }
+  };
+
+  const copyTags = () => {
+    if (formData.tags.length === 0) return;
+    navigator.clipboard.writeText(formData.tags.join(', '));
+    alert('Đã copy Tags vào Clipboard!');
+  };
+
+  const copyHashtags = () => {
+    if (formData.hashtags.length === 0) return;
+    navigator.clipboard.writeText(formData.hashtags.map(h => `#${h}`).join(' '));
+    alert('Đã copy Hashtags vào Clipboard!');
   };
 
   if (!isOpen) return null;
@@ -186,13 +331,41 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList 
           </section>
 
           {/* Tags & Hashtags */}
-          <section className="space-y-4">
-            <h3 className="text-sm font-bold text-gray-900 flex items-center">
-              <Tag size={16} className="mr-2 text-purple-500" /> Tags & Hashtags
-            </h3>
+          <section className="space-y-4 relative">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-900 flex items-center">
+                <Tag size={16} className="mr-2 text-purple-500" /> Tags & Hashtags
+              </h3>
+              <div className="flex items-center gap-3">
+                {isFetchingTags && scanProgress && (
+                  <div className="text-xs font-bold text-purple-600 bg-purple-50 px-3 py-1.5 rounded-lg border border-purple-100 flex items-center animate-pulse">
+                     <span className="mr-2 border-r border-purple-200 pr-2">Quét {scanProgress.current}/{scanProgress.total}</span>
+                     <span className="text-gray-500 font-normal truncate max-w-[150px]" title={scanProgress.channelName}>{scanProgress.channelName}</span>
+                  </div>
+                )}
+                {editingTopic && editingTopic.id && (
+                  <button
+                    type="button"
+                    onClick={fetchTagsFromChannels}
+                    disabled={isFetchingTags}
+                    className="bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-bold flex items-center transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    <RefreshCw size={14} className={`mr-1.5 ${isFetchingTags ? 'animate-spin' : ''}`} />
+                    {isFetchingTags ? 'Đang quét API...' : 'Quét từ Kênh Đối thủ'}
+                  </button>
+                )}
+              </div>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Bộ 20 Tags (SEO)</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase">Bộ 20 Tags (SEO)</label>
+                  {formData.tags.length > 0 && (
+                    <button type="button" onClick={copyTags} className="text-blue-500 hover:text-blue-700 text-xs font-bold flex items-center transition-colors">
+                      <Copy size={12} className="mr-1" /> Copy
+                    </button>
+                  )}
+                </div>
                 <div className="flex gap-2 mb-2">
                   <input
                     type="text"
@@ -221,7 +394,14 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList 
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">10 Hashtags phổ biến</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-gray-500 uppercase">10 Hashtags phổ biến</label>
+                  {formData.hashtags.length > 0 && (
+                    <button type="button" onClick={copyHashtags} className="text-blue-500 hover:text-blue-700 text-xs font-bold flex items-center transition-colors">
+                      <Copy size={12} className="mr-1" /> Copy
+                    </button>
+                  )}
+                </div>
                 <div className="flex gap-2 mb-2">
                   <div className="relative flex-1">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">#</span>
@@ -318,6 +498,90 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList 
               />
             </div>
             
+            {/* Lịch đăng mẫu (Default Schedules) */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-bold text-gray-500 uppercase flex items-center">
+                  <Clock size={16} className="mr-2 text-indigo-500" />
+                  Lịch đăng video mẫu (Định kỳ)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setFormData({
+                    ...formData,
+                    defaultSchedules: [...(formData.defaultSchedules || []), { time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
+                  })}
+                  className="flex items-center text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 transition-colors"
+                >
+                  <Plus size={14} className="mr-1" /> Thêm khung giờ
+                </button>
+              </div>
+              
+              <div className="space-y-3">
+                {formData.defaultSchedules?.map((schedule, index) => (
+                  <div key={index} className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 shadow-sm relative group">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newSchedules = formData.defaultSchedules!.filter((_, i) => i !== index);
+                        setFormData({ ...formData, defaultSchedules: newSchedules });
+                      }}
+                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md z-10 hover:bg-red-600 transition-colors cursor-pointer"
+                      title="Xóa lịch đăng này"
+                    >
+                      <X size={14} />
+                    </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Giờ đăng (HH:mm)</label>
+                        <input
+                          type="time"
+                          value={schedule.time}
+                          onChange={e => {
+                            const newSchedules = [...formData.defaultSchedules!];
+                            newSchedules[index] = { ...schedule, time: e.target.value };
+                            setFormData({ ...formData, defaultSchedules: newSchedules });
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-indigo-500 text-sm bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Các ngày trong tuần</label>
+                        <div className="flex flex-wrap gap-1">
+                          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                            <button
+                              key={day}
+                              type="button"
+                              onClick={() => {
+                                const currentDays = schedule.days;
+                                const newDays = currentDays.includes(day)
+                                  ? currentDays.filter(d => d !== day)
+                                  : [...currentDays, day];
+                                const newSchedules = [...formData.defaultSchedules!];
+                                newSchedules[index] = { ...schedule, days: newDays };
+                                setFormData({ ...formData, defaultSchedules: newSchedules });
+                              }}
+                              className={`px-2 py-1 text-[10px] font-bold rounded border transition-colors ${schedule.days.includes(day)
+                                  ? 'bg-indigo-600 text-white border-indigo-600'
+                                  : 'bg-white text-gray-400 border-gray-200 hover:border-indigo-300'
+                                }`}
+                            >
+                              {day}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(!formData.defaultSchedules || formData.defaultSchedules.length === 0) && (
+                  <div className="text-[11px] text-gray-500 italic p-3 bg-gray-50 border border-dashed border-gray-200 rounded-xl text-center">
+                    Chưa có lịch đăng mẫu nào được thiết lập.
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Phân công nhân sự */}
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Phân công Nhân sự phụ trách (Assignees)</label>

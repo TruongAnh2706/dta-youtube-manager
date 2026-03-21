@@ -23,6 +23,7 @@ import { AutoSaveService } from './components/AutoSaveService';
 import { AdminSettings } from './components/AdminSettings';
 import { PermissionSettings } from './components/PermissionSettings';
 import { Login } from './components/Login';
+import { ScheduleAlarm } from './components/ScheduleAlarm';
 import { LayoutDashboard, Youtube, Hash, Menu, Link as LinkIcon, Users, LineChart, Calendar as CalendarIcon, DollarSign, ShieldAlert, HardDrive, Wrench, Sparkles, Eye, EyeOff, Bell, Crosshair, LogOut, Database, Settings, ShieldCheck, Briefcase, Mail, ChevronDown, ChevronRight, FolderOpen, Search, Compass } from 'lucide-react';
 import { RolePermissions, PermissionKey, StaffRole } from './types';
 
@@ -364,6 +365,19 @@ function AppContent() {
         </div>
       </aside>
 
+      {/* Cảnh báo Lịch Đăng (Chạy ngầm toàn cầu) - CHỈ BÁO CHO KÊNH MÌNH QUẢN LÝ */}
+      {channels && staffList && (
+        <ScheduleAlarm 
+          channels={channels.filter(c => 
+            staffList.find(s => s.id === currentUser?.id)?.assignedChannelIds?.includes(c.id)
+          )} 
+          tasks={tasks}
+          setTasks={setTasks}
+          workflowSteps={systemSettings?.taskStatuses || []}
+          currentUser={currentUser}
+        />
+      )}
+
       {/* Main content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Header */}
@@ -414,15 +428,16 @@ function AppContent() {
               <Dashboard channels={viewableChannels} topics={topics} staffList={staffList} financials={viewableFinancials} tasks={viewableTasks} geminiApiKey={activeGeminiKey} currentUser={currentUser} />
             )}
             {activeTab === 'emails' && (
-              <EmailManager 
-                emails={viewableEmails} 
-                setEmails={setManagedEmails} 
-                staffList={staffList} 
-                topics={topics} 
-                currentUser={currentUser} 
-                tasks={tasks}
+              <EmailManager
+                emails={viewableEmails}
+                setEmails={setManagedEmails}
+                staffList={staffList}
+                topics={topics}
+                currentUser={currentUser}
+                tasks={viewableTasks}
                 setTasks={setTasks}
                 systemSettings={systemSettings}
+                channels={viewableChannels}
               />
             )}
             {activeTab === 'channels' && (
@@ -442,10 +457,12 @@ function AppContent() {
                 setStaffList={setStaffList}
                 financials={viewableFinancials}
                 strikes={viewableStrikes}
+                managedEmails={viewableEmails}
+                setManagedEmails={setManagedEmails}
               />
             )}
             {activeTab === 'topics' && (
-              <Topics topics={topics} setTopics={setTopics} staffList={staffList} />
+              <Topics topics={topics} setTopics={setTopics} staffList={staffList} channels={channels} sourceChannels={sourceChannels} youtubeApiKey={activeYoutubeKey || ''} />
             )}
             {activeTab === 'spy' && (
               <SpyManager

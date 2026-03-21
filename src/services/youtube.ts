@@ -14,11 +14,11 @@ export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipT
   let apiUrl = '';
 
   if (channelIdMatch) {
-    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&id=${channelIdMatch[1]}&key=${apiKey}`;
+    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&id=${channelIdMatch[1]}&key=${apiKey}`;
   } else if (handleMatch) {
-    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&forHandle=%40${handleMatch[1]}&key=${apiKey}`;
+    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&forHandle=%40${handleMatch[1]}&key=${apiKey}`;
   } else if (customMatch) {
-    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&forUsername=${customMatch[2]}&key=${apiKey}`;
+    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&forUsername=${customMatch[2]}&key=${apiKey}`;
   } else {
     throw new Error("URL không hợp lệ. Vui lòng dùng link dạng youtube.com/channel/UC... hoặc youtube.com/@handle");
   }
@@ -67,7 +67,9 @@ export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipT
             thumbnailUrl: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
             publishedAt: item.snippet.publishedAt,
             viewCount: parseInt(item.statistics.viewCount || '0', 10),
-            duration: item.contentDetails.duration
+            duration: item.contentDetails.duration,
+            tags: item.snippet.tags || [],
+            description: item.snippet.description || ''
           })) || [];
         }
       } catch (e) {
@@ -92,7 +94,9 @@ export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipT
             thumbnailUrl: item.snippet.thumbnails?.medium?.url || item.snippet.thumbnails?.default?.url,
             publishedAt: item.snippet.publishedAt,
             viewCount: parseInt(item.statistics.viewCount || '0', 10),
-            duration: item.contentDetails.duration
+            duration: item.contentDetails.duration,
+            tags: item.snippet.tags || [],
+            description: item.snippet.description || ''
           })) || [];
         }
       } catch (e) {
@@ -122,6 +126,7 @@ export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipT
       videoCount: videoCount,
       publishedAt: channel.snippet.publishedAt,
       description: channel.snippet.description,
+      channelKeywords: channel.brandingSettings?.channel?.keywords || '', // Dữ liệu Tags ẩn của kênh
       latestVideos,
       topVideos,
       calculatedRating: rating

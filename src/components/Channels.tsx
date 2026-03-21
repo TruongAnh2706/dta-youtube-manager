@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Channel, Topic, Proxy, SourceChannel, VideoTask, Staff, FinancialRecord, Strike } from '../types';
+import { Channel, Topic, Proxy, SourceChannel, VideoTask, Staff, FinancialRecord, Strike, ManagedEmail } from '../types';
 import { Plus, Edit2, Trash2, X, ExternalLink, Search, Eye, EyeOff, ShieldAlert, RefreshCw, Upload, FileDown, AlertCircle, Sparkles, Copy, Check, Download, Clock, Calendar, User, DollarSign, BarChart2, Users, KanbanSquare, ShieldCheck } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../lib/supabase';
@@ -9,7 +9,7 @@ import { analyzeChannelTopic } from '../services/aiService';
 import { format } from 'date-fns';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
-
+import { useAuth } from '../contexts/AuthContext';
 interface ChannelsProps {
   channels: Channel[];
   setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
@@ -26,11 +26,14 @@ interface ChannelsProps {
   financials: FinancialRecord[];
   strikes: Strike[];
   geminiApiKey?: string;
+  managedEmails?: ManagedEmail[];
+  setManagedEmails?: React.Dispatch<React.SetStateAction<ManagedEmail[]>>;
 }
 
-export function Channels({ channels, setChannels, topics, setTopics, proxies, privacyMode, sourceChannels, youtubeApiKey, rotateYoutubeKey, tasks, staffList, setStaffList, financials, strikes, geminiApiKey }: ChannelsProps) {
+export function Channels({ channels, setChannels, topics, setTopics, proxies, privacyMode, sourceChannels, youtubeApiKey, rotateYoutubeKey, tasks, staffList, setStaffList, financials, strikes, geminiApiKey, managedEmails = [], setManagedEmails }: ChannelsProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
+  const { currentUser } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [editingChannel, setEditingChannel] = useState<Channel | null>(null);
@@ -45,6 +48,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [isFetching, setIsFetching] = useState(false);
   const [fetchError, setFetchError] = useState('');
   const [editingStaffIds, setEditingStaffIds] = useState<string[]>([]);
+  const [selectedManagedEmailId, setSelectedManagedEmailId] = useState<string>('');
 
   const [formData, setFormData] = useState<Omit<Channel, 'id'>>({
     channelCode: '', name: '', url: '', avatarUrl: '', subscribers: 0, totalViews: 0, topicIds: [], status: 'active', notes: '',
@@ -533,6 +537,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         let currentApiKey = youtubeApiKey;
 
         let createdTopicsMap = new Map<string, string>(); // name -> id
+        const importedChannelIds: string[] = [];
 
         for (let i = 0; i < newChannelsToImport.length; i++) {
           setImportProgress({ current: i + 1, total: newChannelsToImport.length });
@@ -631,7 +636,17 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           };
 
           setChannels(prev => [...prev, newChannel]);
+          importedChannelIds.push(newChannel.id);
           successCount++;
+        }
+
+        if (successCount > 0 && currentUser && currentUser.role !== 'admin' && importedChannelIds.length > 0) {
+           const staff = staffList.find(s => s.id === currentUser.id);
+           if (staff) {
+               const newAssigned = Array.from(new Set([...(staff.assignedChannelIds || []), ...importedChannelIds]));
+               await supabase.from('staff_list').update({ assigned_channel_ids: newAssigned }).eq('id', currentUser.id);
+               setStaffList(prev => prev.map(s => s.id === currentUser.id ? { ...s, assignedChannelIds: newAssigned } : s));
+           }
         }
 
         showToast(`Nhập hoàn tất: Tổng ${newChannelsToImport.length} kênh mới, lỗi ${errorCount}.${duplicateCount > 0 ? ` (Bỏ qua ${duplicateCount} kênh trùng lặp)` : ''}${createdTopicsMap.size > 0 ? ` Đã tạo tự động ${createdTopicsMap.size} chủ đề.` : ''}`, successCount > 0 ? 'success' : 'error');
@@ -657,6 +672,8 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       });
       const assignedToChannel = staffList.filter(s => (s.assignedChannelIds || []).includes(channel.id)).map(s => s.id);
       setEditingStaffIds(assignedToChannel);
+      const matchedEmail = managedEmails.find(em => em.email === channel.email);
+      setSelectedManagedEmailId(matchedEmail ? matchedEmail.id : '');
     } else {
       setEditingChannel(null);
       setFormData({
@@ -665,7 +682,9 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         email: '', password: '', recoveryEmail: '', twoFactorCode: '', proxyId: '',
         postingSchedules: [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
       });
-      setEditingStaffIds([]);
+      const defaultStaffIds = currentUser && currentUser.role !== 'admin' ? [currentUser.id] : [];
+      setEditingStaffIds(defaultStaffIds);
+      setSelectedManagedEmailId('');
     }
     setIsModalOpen(true);
   };
@@ -749,23 +768,48 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       }
     }
 
+    const channelIdToUse = editingChannel ? editingChannel.id : Date.now().toString();
+    const finalChannelCode = formData.channelCode || channelIdToUse;
+
     if (editingChannel) {
       setChannels(prev => prev.map(c => c.id === editingChannel.id ? { ...c, ...formData } : c));
       updateStaffChannelAssignment(editingChannel.id, editingStaffIds);
       showToast('Đã cập nhật thông tin kênh thành công!', 'success');
     } else {
-      const newId = Date.now().toString();
-      setChannels(prev => [...prev, { id: newId, ...formData }]);
-      updateStaffChannelAssignment(newId, editingStaffIds);
+      setChannels(prev => [...prev, { id: channelIdToUse, ...formData }]);
+      updateStaffChannelAssignment(channelIdToUse, editingStaffIds);
       showToast('Đã thêm kênh mới thành công!', 'success');
     }
+
+    if (formData.email && setManagedEmails) {
+      const matchedEmail = managedEmails.find(em => em.email.toLowerCase() === formData.email?.toLowerCase());
+      if (matchedEmail) {
+         if (formData.status === 'dead') {
+             supabase.from('managed_emails').update({ status: 'new', channel_code: '' }).eq('id', matchedEmail.id).then();
+             setManagedEmails(prev => prev.map(em => em.id === matchedEmail.id ? { ...em, status: 'new', channelCode: '' } : em));
+         } else {
+             supabase.from('managed_emails').update({ status: 'Kênh đã tạo', channel_code: finalChannelCode }).eq('id', matchedEmail.id).then();
+             setManagedEmails(prev => prev.map(em => em.id === matchedEmail.id ? { ...em, status: 'Kênh đã tạo', channelCode: finalChannelCode } : em));
+         }
+      }
+    }
+
     handleCloseModal();
   };
 
   const handleDelete = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa kênh này?')) {
+      const channelToDelete = channels.find(c => c.id === id);
       setChannels(prev => prev.filter(c => c.id !== id));
       
+      if (channelToDelete?.email && setManagedEmails) {
+          const matchedEmail = managedEmails.find(em => em.email.toLowerCase() === channelToDelete.email?.toLowerCase());
+          if (matchedEmail) {
+              supabase.from('managed_emails').update({ status: 'new', channel_code: '' }).eq('id', matchedEmail.id).then();
+              setManagedEmails(prev => prev.map(em => em.id === matchedEmail.id ? { ...em, status: 'new', channelCode: '' } : em));
+          }
+      }
+
       const { error } = await supabase.from('channels').delete().eq('id', id);
       if (error) {
         showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
@@ -955,9 +999,14 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
               Gắn Chủ đề
             </button>
             {hasPermission('staff_edit') && (
-              <button onClick={() => { setBulkActionStaffId(''); setIsBulkStaffModalOpen(true); }} className="px-3 py-1.5 bg-teal-600 text-white rounded text-sm hover:bg-teal-700 transition-colors">
-                Giao cho Nhân sự
-              </button>
+              <>
+                <button onClick={() => { setBulkActionStaffId(''); setIsBulkStaffModalOpen(true); }} className="px-3 py-1.5 bg-teal-600 text-white rounded text-sm hover:bg-teal-700 transition-colors">
+                  Giao cho Nhân sự
+                </button>
+                <button onClick={handleBulkRemoveStaffSubmit} className="px-3 py-1.5 bg-orange-500 text-white rounded text-sm hover:bg-orange-600 transition-colors shadow-sm">
+                  Thu hồi Nhân sự
+                </button>
+              </>
             )}
             <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors">
               Xóa {selectedIds.length} kênh
@@ -1089,7 +1138,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                         </div>
                       ) : (
                         <div className="flex flex-col space-y-1 text-sm">
-                          <span className="text-gray-700">{channel.email || 'Chưa có email'}</span>
+                          <div className="flex items-center space-x-2">
+                             <span className="text-gray-700 font-medium">{channel.email || 'Chưa có email'}</span>
+                             {managedEmails?.some(em => em.email === channel.email) && (
+                               <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded border border-blue-200" title="Đã liên kết kho Email">Linked</span>
+                             )}
+                          </div>
                           <div className="flex items-center text-gray-500">
                             <span className="font-mono mr-2">{showPasswords[channel.id] ? channel.password : '••••••••'}</span>
                             {channel.password && (
@@ -1309,7 +1363,34 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                   <div className="bg-red-50 p-4 rounded-lg border border-red-100">
                     <h3 className="text-sm font-semibold text-red-900 mb-3 flex items-center"><ShieldAlert size={16} className="mr-2" /> Thông tin Bảo mật (Nhạy cảm)</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div><label className="block text-sm font-medium text-red-800 mb-1">Email đăng nhập</label><input type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500" /></div>
+                      <div>
+                        <label className="block text-sm font-medium text-red-800 mb-1 flex justify-between">
+                          <span>Email đăng nhập</span>
+                          {selectedManagedEmailId && <span className="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded">AutoFill Active</span>}
+                        </label>
+                        <select
+                          value={selectedManagedEmailId}
+                          onChange={(e) => {
+                             const val = e.target.value;
+                             setSelectedManagedEmailId(val);
+                             if (val !== '') {
+                                const em = managedEmails?.find(m => m.id === val);
+                                if (em) setFormData(prev => ({ ...prev, email: em.email, password: em.password || prev.password, recoveryEmail: em.recoveryEmail || prev.recoveryEmail, twoFactorCode: em.twoFactorAuth || prev.twoFactorCode }));
+                             } else {
+                                setFormData(prev => ({ ...prev, email: '', password: '', recoveryEmail: '', twoFactorCode: '' }));
+                             }
+                          }}
+                          className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500 mb-2 bg-white"
+                        >
+                           <option value="">-- Tự nhập thủ công --</option>
+                           {managedEmails?.filter(m => !channels.some(c => c.email?.toLowerCase() === m.email.toLowerCase() && c.id !== editingChannel?.id)).map(em => (
+                              <option key={em.id} value={em.id}>{em.email} {em.channelCode ? `(Mã dự kiến: ${em.channelCode})` : ''}</option>
+                           ))}
+                        </select>
+                        {selectedManagedEmailId === '' && (
+                           <input type="email" placeholder="Nhập email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500 bg-white" />
+                        )}
+                      </div>
                       <div><label className="block text-sm font-medium text-red-800 mb-1">Mật khẩu</label><input type="text" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500" /></div>
                       <div><label className="block text-sm font-medium text-red-800 mb-1">Email khôi phục</label><input type="email" value={formData.recoveryEmail} onChange={e => setFormData({ ...formData, recoveryEmail: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500" /></div>
                       <div><label className="block text-sm font-medium text-red-800 mb-1">Mã 2FA (Secret Key)</label><input type="text" value={formData.twoFactorCode} onChange={e => setFormData({ ...formData, twoFactorCode: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500" placeholder="VD: JBSWY3DPEHPK3PXP" /></div>
@@ -1329,37 +1410,60 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
 
                 {/* Lịch đăng video định kỳ */}
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
                     <h4 className="text-sm font-bold text-blue-900 flex items-center uppercase tracking-wider">
                       <Clock size={16} className="mr-2" /> Lịch đăng video định kỳ
                     </h4>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({
-                        ...formData,
-                        postingSchedules: [...(formData.postingSchedules || []), { time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
-                      })}
-                      className="flex items-center text-xs font-bold text-blue-600 hover:text-blue-700 bg-white px-2 py-1 rounded border border-blue-200 shadow-sm"
-                    >
-                      <Plus size={14} className="mr-1" /> Thêm khung giờ
-                    </button>
+                    <div className="flex gap-2 items-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (formData.topicIds && formData.topicIds.length > 0) {
+                            const topic = topics.find(t => t.id === formData.topicIds[0]);
+                            if (topic && topic.defaultSchedules && topic.defaultSchedules.length > 0) {
+                              setFormData({
+                                ...formData,
+                                postingSchedules: topic.defaultSchedules
+                              });
+                              // window.alert không phù hợp, nhưng components này có dùng showToast
+                              // Mặc định Channels.tsx đã có showToast
+                            } else {
+                              // Tùy chọn: báo chưa có
+                            }
+                          }
+                        }}
+                        className="flex items-center text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-200 transition-colors shadow-sm"
+                        title="Áp dụng lịch từ Chủ đề (Niche) đầu tiên"
+                      >
+                         <Sparkles size={14} className="mr-1" /> Lấy từ Chủ đề
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFormData({
+                          ...formData,
+                          postingSchedules: [...(formData.postingSchedules || []), { time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
+                        })}
+                        className="flex items-center text-xs font-bold text-blue-600 hover:text-blue-700 bg-white px-2 py-1 rounded border border-blue-200 shadow-sm"
+                      >
+                        <Plus size={14} className="mr-1" /> Thêm khung giờ
+                      </button>
+                    </div>
                   </div>
 
                   <div className="space-y-4">
                     {formData.postingSchedules?.map((schedule, index) => (
                       <div key={index} className="bg-white p-4 rounded-lg border border-blue-100 shadow-sm relative group">
-                        {formData.postingSchedules!.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newSchedules = formData.postingSchedules!.filter((_, i) => i !== index);
-                              setFormData({ ...formData, postingSchedules: newSchedules });
-                            }}
-                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md z-10"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newSchedules = formData.postingSchedules!.filter((_, i) => i !== index);
+                            setFormData({ ...formData, postingSchedules: newSchedules });
+                          }}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center shadow-md z-10 hover:bg-red-600 transition-colors cursor-pointer"
+                          title="Xóa lịch đăng này"
+                        >
+                          <X size={14} />
+                        </button>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Giờ đăng (HH:mm)</label>
