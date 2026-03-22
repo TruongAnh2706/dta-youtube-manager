@@ -56,6 +56,7 @@ export function TaskManager({
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [showReportHistory, setShowReportHistory] = useState(false);
   const toggleAssetLink = (assetId: string) => {
     setTaskFormData(prev => {
       const currentLinks = prev.linkedAssetIds || [];
@@ -196,10 +197,11 @@ export function TaskManager({
   const dashboardMetrics = useMemo(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
     const lastStepId = workflowSteps.length > 0 ? workflowSteps[workflowSteps.length - 1].id : 'published';
-    const overdue = myTasks.filter(t => isTaskOverdue(t)).length;
-    const inProgress = myTasks.filter(t => t.status !== 'pending' && t.status !== lastStepId).length;
-    const completedToday = myTasks.filter(t => t.status === lastStepId && t.dueDate === today).length;
-    const totalToday = myTasks.filter(t => t.dueDate === today).length;
+    const validMyTasks = myTasks.filter(t => !t.title.startsWith('[Lịch Định Kỳ]') && !t.title.startsWith('[DELETED]'));
+    const overdue = validMyTasks.filter(t => isTaskOverdue(t)).length;
+    const inProgress = validMyTasks.filter(t => t.status !== 'pending' && t.status !== lastStepId).length;
+    const completedToday = validMyTasks.filter(t => t.status === lastStepId && t.dueDate === today).length;
+    const totalToday = validMyTasks.filter(t => t.dueDate === today).length;
     return { overdue, inProgress, completedToday, totalToday };
   }, [myTasks, workflowSteps]);
 
@@ -285,9 +287,10 @@ export function TaskManager({
   const reportFormMetrics = useMemo(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
     const lastStepId = workflowSteps.length > 0 ? workflowSteps[workflowSteps.length - 1].id : 'published';
-    const completedTasksToday = myTasks.filter(t => t.status === lastStepId && t.dueDate === today)
+    const validMyTasks = myTasks.filter(t => !t.title.startsWith('[Lịch Định Kỳ]') && !t.title.startsWith('[DELETED]'));
+    const completedTasksToday = validMyTasks.filter(t => t.status === lastStepId && t.dueDate === today)
       .map(t => ({ id: t.id, title: t.title }));
-    const pendingTasksToday = myTasks.filter(t => isTaskOverdue(t) || (t.status !== lastStepId && t.dueDate === today))
+    const pendingTasksToday = validMyTasks.filter(t => isTaskOverdue(t) || (t.status !== lastStepId && t.dueDate === today))
       .map(t => ({ id: t.id, title: t.title }));
     return { completedTasksToday, pendingTasksToday, today, lastStepId };
   }, [myTasks, workflowSteps]);
@@ -930,93 +933,110 @@ export function TaskManager({
       )}
 
       {activeTab === 'reports' && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* Dashboard Cá Nhân - Left Column */}
-          <div className="xl:col-span-1 space-y-6">
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                <BarChart3 size={18} className="mr-2 text-blue-600" /> Thống kê hôm nay của bạn
-              </h2>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="bg-green-50 rounded-lg p-4 border border-green-100">
-                  <p className="text-xs text-green-700 font-semibold mb-1">Đã hoàn thành</p>
-                  <p className="text-2xl font-black text-green-600">{reportFormMetrics.completedTasksToday.length}</p>
+        <div className="flex flex-col gap-6">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center">
+              <BarChart3 size={24} className="mr-2 text-indigo-600" /> Báo cáo & Thống kê
+            </h2>
+            <button 
+              onClick={() => setShowReportHistory(!showReportHistory)}
+              className={`px-4 py-2 ${showReportHistory ? 'bg-indigo-600 text-white shadow-md hover:bg-indigo-700' : 'bg-white text-indigo-700 border border-indigo-200 hover:bg-indigo-50 shadow-sm'} font-bold rounded-xl transition-all flex items-center`}
+            >
+              <LayoutGrid size={18} className="mr-2" />
+              {showReportHistory ? 'Ẩn Lịch sử Báo cáo' : 'Xem Lịch sử Báo Cáo'}
+            </button>
+          </div>
+
+          <div className={`grid grid-cols-1 ${showReportHistory ? 'xl:grid-cols-3' : 'md:grid-cols-2'} gap-6 transition-all duration-300`}>
+            {/* Dashboard Cá Nhân - Left Column */}
+            <div className={`${showReportHistory ? 'xl:col-span-1' : ''} space-y-6`}>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                  <BarChart3 size={18} className="mr-2 text-blue-600" /> Thống kê hôm nay của bạn
+                </h2>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div className="bg-green-50 rounded-lg p-4 border border-green-100">
+                    <p className="text-xs text-green-700 font-semibold mb-1">Đã hoàn thành</p>
+                    <p className="text-2xl font-black text-green-600">{reportFormMetrics.completedTasksToday.length}</p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-4 border border-red-100">
+                    <p className="text-xs text-red-700 font-semibold mb-1">Trễ / Tồn đọng</p>
+                    <p className="text-2xl font-black text-red-600">{reportFormMetrics.pendingTasksToday.length}</p>
+                  </div>
                 </div>
-                <div className="bg-red-50 rounded-lg p-4 border border-red-100">
-                  <p className="text-xs text-red-700 font-semibold mb-1">Trễ / Tồn đọng</p>
-                  <p className="text-2xl font-black text-red-600">{reportFormMetrics.pendingTasksToday.length}</p>
-                </div>
+                
+                {reportFormMetrics.pendingTasksToday.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-xs font-bold text-red-600 mb-2">Công việc đang tồn đọng:</p>
+                    <ul className="text-xs text-gray-600 space-y-1 pl-4 list-disc max-h-32 overflow-y-auto">
+                      {reportFormMetrics.pendingTasksToday.map(t => <li key={t.id} className="truncate" title={t.title}>{t.title}</li>)}
+                    </ul>
+                  </div>
+                )}
               </div>
-              
-              {reportFormMetrics.pendingTasksToday.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-xs font-bold text-red-600 mb-2">Công việc đang tồn đọng:</p>
-                  <ul className="text-xs text-gray-600 space-y-1 pl-4 list-disc max-h-32 overflow-y-auto">
-                    {reportFormMetrics.pendingTasksToday.map(t => <li key={t.id} className="truncate" title={t.title}>{t.title}</li>)}
-                  </ul>
-                </div>
-              )}
             </div>
 
             {/* Form Gửi báo cáo */}
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative sticky top-6">
-              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
-                <Send size={18} className="mr-2 text-blue-600" /> Nộp Báo cáo cuối ngày
-              </h2>
-              <form onSubmit={handleSubmitReport} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ngày báo cáo</label>
-                  <input
-                    type="text" disabled value={format(new Date(), 'dd/MM/yyyy')}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-500 font-medium"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Khó khăn / Vấn đề <span className="text-red-500">*</span></label>
-                  <textarea
-                    required
-                    value={reportIssues}
-                    onChange={e => setReportIssues(e.target.value)}
-                    placeholder="Bạn gặp vướng mắc gì hôm nay? (VD: Máy lag, thiếu tài nguyên... Hoặc ghi 'Không')"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[80px]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Kế hoạch ngày mai <span className="text-red-500">*</span></label>
-                  <textarea
-                    required
-                    value={reportPlan}
-                    onChange={e => setReportPlan(e.target.value)}
-                    placeholder="Mục tiêu chính vào ngày mai là gì?"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Chi phí cá nhân ứng trước (VND) (Nếu có)</label>
-                  <input
-                    type="number"
-                    value={reportExpenses}
-                    onChange={e => setReportExpenses(e.target.value ? Number(e.target.value) : '')}
-                    placeholder="VD: 50000"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={!currentStaff}
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center shadow-md mt-4"
-                >
-                  <ClipboardCheck size={18} className="mr-2" /> Xác nhận nộp báo cáo
-                </button>
-              </form>
+            <div className={`${showReportHistory ? 'xl:col-span-1' : ''}`}>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                  <Send size={18} className="mr-2 text-blue-600" /> Nộp Báo cáo cuối ngày
+                </h2>
+                <form onSubmit={handleSubmitReport} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ngày báo cáo</label>
+                    <input
+                      type="text" disabled value={format(new Date(), 'dd/MM/yyyy')}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-500 font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Khó khăn / Vấn đề <span className="text-red-500">*</span></label>
+                    <textarea
+                      required
+                      value={reportIssues}
+                      onChange={e => setReportIssues(e.target.value)}
+                      placeholder="Bạn gặp vướng mắc gì hôm nay? (VD: Máy lag, thiếu tài nguyên... Hoặc ghi 'Không')"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Kế hoạch ngày mai <span className="text-red-500">*</span></label>
+                    <textarea
+                      required
+                      value={reportPlan}
+                      onChange={e => setReportPlan(e.target.value)}
+                      placeholder="Mục tiêu chính vào ngày mai là gì?"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[60px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Chi phí cá nhân ứng trước (VND) (Nếu có)</label>
+                    <input
+                      type="number"
+                      value={reportExpenses}
+                      onChange={e => setReportExpenses(e.target.value ? Number(e.target.value) : '')}
+                      placeholder="VD: 50000"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!currentStaff}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors flex items-center justify-center shadow-md mt-4"
+                  >
+                    <ClipboardCheck size={18} className="mr-2" /> Xác nhận nộp báo cáo
+                  </button>
+                </form>
+              </div>
             </div>
-          </div>
 
           {/* New Feed Báo cáo - Right Column */}
-          <div className="xl:col-span-2 space-y-4">
+          {showReportHistory && (
+          <div className="xl:col-span-1 space-y-4">
             <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
               <LayoutGrid size={18} className="mr-2 text-indigo-600" /> 
-              {isManager ? 'Bảng tin Báo cáo Toàn Nhóm' : 'Lịch sử Báo cáo của Tôi'}
+              {isManager ? 'Lịch sử báo cáo chi tiết' : 'Lịch sử Báo cáo của Tôi'}
             </h2>
             <div className="space-y-4">
               {dailyReports.filter(r => isManager || r.staffId === currentStaff?.id).length > 0 ? (
@@ -1106,6 +1126,8 @@ export function TaskManager({
                 </div>
               )}
             </div>
+          </div>
+          )}
           </div>
         </div>
       )}

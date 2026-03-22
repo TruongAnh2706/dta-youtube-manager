@@ -377,8 +377,13 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
   };
 
   const filteredEmails = emails.filter(em => {
-    const matchesSearch = em.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          (em.notes || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const st = searchTerm.toLowerCase();
+    const linkedChannel = channels?.find(c => c.email?.toLowerCase() === em.email.toLowerCase());
+    const matchesSearch = 
+      em.email.toLowerCase().includes(st) ||
+      (em.channelCode || '').toLowerCase().includes(st) ||
+      (linkedChannel?.name || '').toLowerCase().includes(st) ||
+      (em.notes || '').toLowerCase().includes(st);
     const matchesStatus = filterStatus === 'all' || em.status === filterStatus;
     
     // Privacy filter

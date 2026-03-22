@@ -13,6 +13,7 @@ const PERMISSION_GROUPS: { group: string; permissions: { key: PermissionKey; lab
     group: 'Tổng quan & Dashboard',
     permissions: [
       { key: 'dashboard_view', label: 'Xem Dashboard', description: 'Cho phép xem biểu đồ và số liệu tổng quát' },
+      { key: 'reports_view_all', label: 'Dashboard Báo cáo', description: 'Xem Báo cáo Tổng hợp của mọi nhân sự' },
     ]
   },
   {
@@ -101,12 +102,12 @@ const PERMISSION_GROUPS: { group: string; permissions: { key: PermissionKey; lab
 const DEFAULT_PERMISSIONS: RolePermissions = {
   admin: PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)),
   manager: [
-    'dashboard_view', 'topics_view', 'topics_edit', 'sources_view', 'sources_edit', 'sources_analyze',
+    'dashboard_view', 'reports_view_all', 'topics_view', 'topics_edit', 'sources_view', 'sources_edit', 'sources_analyze',
     'channels_view', 'channels_edit', 'emails_view', 'emails_edit', 'staff_view', 'calendar_view', 'calendar_edit', 'calendar_view_all',
     'finance_view', 'finance_edit', 'copyright_view', 'assets_view', 'assets_edit', 'tasks_view', 'tasks_edit', 'tasks_claim', 'settings_view'
   ],
   leader: [
-    'dashboard_view', 'topics_view', 'sources_view', 'channels_view', 'emails_view', 'calendar_view', 'calendar_edit', 
+    'dashboard_view', 'reports_view_all', 'topics_view', 'sources_view', 'channels_view', 'emails_view', 'calendar_view', 'calendar_edit', 
     'calendar_view_all', 'copyright_view', 'assets_view', 'tasks_view', 'tasks_edit', 'tasks_claim'
   ],
   member: [

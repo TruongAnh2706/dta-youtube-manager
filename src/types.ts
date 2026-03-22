@@ -103,7 +103,7 @@ export type PermissionKey =
   | 'finance_view' | 'finance_edit' | 'finance_view_accounts'
   | 'copyright_view' | 'copyright_edit'
   | 'assets_view' | 'assets_edit'
-  | 'tasks_view' | 'tasks_edit' | 'tasks_claim'
+  | 'tasks_view' | 'tasks_edit' | 'tasks_claim' | 'reports_view_all'
   | 'emails_view' | 'emails_edit'
   | 'settings_view' | 'settings_edit_keys' | 'settings_edit_permissions';
 

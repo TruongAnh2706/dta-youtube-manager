@@ -24,7 +24,8 @@ import { AdminSettings } from './components/AdminSettings';
 import { PermissionSettings } from './components/PermissionSettings';
 import { Login } from './components/Login';
 import { ScheduleAlarm } from './components/ScheduleAlarm';
-import { LayoutDashboard, Youtube, Hash, Menu, Link as LinkIcon, Users, LineChart, Calendar as CalendarIcon, DollarSign, ShieldAlert, HardDrive, Wrench, Sparkles, Eye, EyeOff, Bell, Crosshair, LogOut, Database, Settings, ShieldCheck, Briefcase, Mail, ChevronDown, ChevronRight, FolderOpen, Search, Compass } from 'lucide-react';
+import { ReportsDashboard } from './components/ReportsDashboard';
+import { LayoutDashboard, Youtube, Hash, Menu, Link as LinkIcon, Users, LineChart, Calendar as CalendarIcon, DollarSign, ShieldAlert, HardDrive, Wrench, Sparkles, Eye, EyeOff, Bell, Crosshair, LogOut, Database, Settings, ShieldCheck, Briefcase, Mail, ChevronDown, ChevronRight, FolderOpen, Search, Compass, BarChart3, PieChart } from 'lucide-react';
 import { RolePermissions, PermissionKey, StaffRole } from './types';
 
 const DEFAULT_PERMISSIONS: RolePermissions = {
@@ -38,12 +39,12 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
     'settings_view', 'settings_edit_keys', 'settings_edit_permissions'
   ],
   manager: [
-    'dashboard_view', 'topics_view', 'topics_edit', 'sources_view', 'sources_edit', 'sources_analyze',
+    'dashboard_view', 'reports_view_all', 'topics_view', 'topics_edit', 'sources_view', 'sources_edit', 'sources_analyze',
     'channels_view', 'channels_edit', 'emails_view', 'emails_edit', 'staff_view', 'calendar_view', 'calendar_edit', 'calendar_view_all',
     'finance_view', 'finance_edit', 'copyright_view', 'assets_view', 'assets_edit', 'tasks_view', 'tasks_edit', 'tasks_claim', 'settings_view'
   ],
   leader: [
-    'dashboard_view', 'topics_view', 'sources_view', 'channels_view', 'emails_view', 'calendar_view', 'calendar_edit',
+    'dashboard_view', 'reports_view_all', 'topics_view', 'sources_view', 'channels_view', 'emails_view', 'calendar_view', 'calendar_edit',
     'calendar_view_all', 'copyright_view', 'assets_view', 'tasks_view', 'tasks_edit', 'tasks_claim'
   ],
   member: [
@@ -205,6 +206,7 @@ function AppContent() {
       label: 'Kế Toán & Nhân Sự',
       icon: DollarSign,
       items: [
+        { id: 'reports_dashboard', label: 'Báo cáo Tổng thể', icon: BarChart3, permission: 'reports_view_all' },
         { id: 'finance', label: 'Tài chính (P&L)', icon: DollarSign, permission: 'finance_view' },
         { id: 'staff', label: 'Nhân sự (HRM)', icon: Users, permission: 'staff_view' },
       ]
@@ -496,6 +498,13 @@ function AppContent() {
                 tasks={viewableTasks}
                 geminiApiKey={activeGeminiKey}
                 onExportPayroll={handleExportPayroll}
+              />
+            )}
+            {activeTab === 'reports_dashboard' && (
+              <ReportsDashboard
+                dailyReports={dailyReports}
+                staffList={staffList}
+                currentUser={currentUser}
               />
             )}
             {activeTab === 'analysis' && (
