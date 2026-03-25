@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Youtube, Lock, User } from 'lucide-react';
+
 import { supabase } from '../lib/supabase';
 
 interface LoginProps {
-  onLogin: (role: 'admin' | 'manager' | 'leader' | 'member', name: string, id: string) => void;
+  onLogin?: (role: 'admin' | 'manager' | 'leader' | 'member', name: string, id: string) => void;
 }
 
 export function Login({ onLogin }: LoginProps) {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
@@ -16,38 +17,30 @@ export function Login({ onLogin }: LoginProps) {
     e.preventDefault();
     setError('');
 
-    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedEmail = email.trim().toLowerCase();
     const trimmedPassword = password.trim();
 
-    // 1. Tài khoản Master Backup (Hệ thống luôn cho phép qua mặt)
-    if (trimmedUsername === 'admin' && trimmedPassword === 'admin') {
-      onLogin('admin', 'Cố vấn DTA Studio', 'admin');
+    if (!trimmedEmail || !trimmedPassword) {
+      setError('Vui lòng nhập đầy đủ Email và Mật khẩu.');
       return;
     }
 
     setIsVerifying(true);
 
     try {
-      // Gọi lên Database Supabase tìm dòng có username và password khớp
-      const { data, error: dbError } = await supabase
-        .from('staff_list')
-        .select('*')
-        .ilike('username', trimmedUsername)
-        .eq('password', trimmedPassword)
-        .single();
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password: trimmedPassword
+      });
 
-      if (dbError || !data) {
-        setError('Tài khoản hoặc mật khẩu không chính xác. Vui lòng thử lại!');
+      if (authError) {
+        setError(authError.message === 'Invalid login credentials' ? 'Tài khoản hoặc mật khẩu không chính xác.' : authError.message);
       } else {
-        if (data.status === 'inactive') {
-          setError('Tài khoản này đã bị khóa!');
-        } else {
-          // Xác minh OK -> Trả state Role và ID vào hệ thống
-          onLogin(data.role, data.name, data.id);
-        }
+        // Đăng nhập thành công, AuthContext sẽ tự động bắt sự kiện onAuthStateChange
+        // Không nhận gọi thêm hook nào ở đây
       }
     } catch (err: any) {
-      setError('Lỗi kết nối máy chủ máy chủ Supabase: ' + err.message);
+      setError('Lỗi kết nối máy chủ xác thực: ' + err.message);
     } finally {
       setIsVerifying(false);
     }
@@ -56,10 +49,10 @@ export function Login({ onLogin }: LoginProps) {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center">
+        <div className="flex justify-center mb-4">
           <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="DTA Studio Logo" className="w-20 h-20 object-contain drop-shadow-[0_0_12px_rgba(255,0,0,0.4)]" />
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+        <h2 className="mt-2 text-center text-3xl font-extrabold text-gray-900 tracking-tight">
           DTA Studio
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
@@ -68,25 +61,23 @@ export function Login({ onLogin }: LoginProps) {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-gray-100">
+        <div className="bg-white py-8 px-4 shadow-xl shadow-slate-200/50 sm:rounded-xl sm:px-10 border border-slate-100">
           <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                Tên đăng nhập
+              <label className="block text-sm font-medium text-gray-700">
+                Địa chỉ Email
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <User className="h-5 w-5 text-gray-400" />
                 </div>
                 <input
-                  id="username"
-                  name="username"
-                  type="text"
+                  type="email"
                   required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
-                  placeholder="Nhập tên đăng nhập"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="block w-full pl-10 sm:text-sm border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 py-3 bg-gray-50 transition-colors"
+                  placeholder="name@dtastudio.vn"
                 />
               </div>
             </div>

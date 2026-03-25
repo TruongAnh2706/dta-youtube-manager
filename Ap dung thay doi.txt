@@ -1,0 +1,73 @@
+# DTA YouTube Manager - Audit nhanh luồng hoạt động, tính năng, phân quyền
+
+Ngày audit: 2026-03-25
+
+## 1) Kiến trúc & luồng hoạt động hiện tại
+
+- Frontend: React + Vite + TypeScript, quản lý state tập trung trong `App.tsx` + hook `useAppData`.
+- Backend dữ liệu chính: Supabase (client-side trực tiếp bằng anon key).
+- Backend phụ: Express server (`server/server.js`) chỉ phục vụ Google Trends.
+- Luồng dữ liệu:
+  1. Login qua bảng `staff_list` ở Supabase.
+  2. `useAppData` tải gần như toàn bộ dữ liệu nhiều bảng về client theo 2 wave.
+  3. UI lọc hiển thị theo role + assignment trong `App.tsx`.
+  4. `AutoSaveService` theo dõi state và tự upsert/delete trở lại Supabase mỗi 3 giây nếu phát hiện thay đổi.
+  5. Realtime subscription lắng nghe mọi thay đổi trong schema public để đồng bộ ngược.
+
+## 2) Tính năng chính đang có
+
+- Dashboard tổng quan, báo cáo, phân tích.
+- Quản lý kênh, topic, source/competitor spy, niche explorer.
+- Pipeline sản xuất: lịch đăng, task manager, tài nguyên.
+- Quản lý email raw, tài chính, nhân sự, bản quyền.
+- Cài đặt API key (YouTube/Gemini), phân quyền role trên UI.
+
+## 3) Đánh giá phân quyền hiện tại
+
+### Điểm tốt
+
+- Có mô hình permission theo role khá đầy đủ ở frontend.
+- Có lọc dữ liệu theo assignment (channels/tasks/financials/emails...) trước khi render.
+
+### Vấn đề lớn (cần ưu tiên cao)
+
+1. **Bảo mật DB đang ở mức rủi ro nghiêm trọng**
+   - SQL schema tắt RLS hàng loạt và grant toàn quyền cho `anon`/`authenticated`.
+   - Hệ quả: client có anon key có thể đọc/ghi hầu như toàn bộ dữ liệu nếu gọi trực tiếp API.
+
+2. **Xác thực yếu + có backdoor đăng nhập admin**
+   - Có hardcode tài khoản `admin/admin` cho phép vào thẳng role admin.
+   - Login đang so khớp password plaintext trực tiếp trong bảng `staff_list`.
+
+3. **Permission hiện chủ yếu là UI-level, chưa phải DB-level**
+   - `useAppData` vẫn tải full dataset nhiều bảng xuống client rồi mới lọc hiển thị.
+   - `AutoSaveService` ghi ngược nhiều bảng không có guard theo action/role ở server side.
+
+4. **Phân quyền role không bền vững (localStorage-based)**
+   - Role permissions lưu localStorage (`yt-role-permissions`).
+   - Màn hình save phân quyền chỉ toast, chưa có lưu server-side thực sự.
+
+## 4) Đề xuất thay đổi (theo mức ưu tiên)
+
+### P0 - Bắt buộc làm ngay
+
+1. Bật lại RLS cho tất cả bảng nhạy cảm (ít nhất: staff, channels, emails, finances, settings).
+2. Xóa hardcode admin fallback trong login.
+3. Chuyển password sang hash (bcrypt/argon2), thêm migration dữ liệu.
+4. Không cho frontend anon key ghi thẳng bảng nhạy cảm; tách qua Supabase Auth + policies hoặc API server có kiểm soát.
+
+### P1 - Nên làm sớm
+
+1. Chuyển quản lý permission từ localStorage sang bảng DB (role_permissions + audit trail).
+2. `useAppData` chỉ query dữ liệu user được phép (filter từ SQL/policy), tránh tải full trước rồi lọc.
+3. `AutoSaveService` bỏ cơ chế sync all-table generic, thay bằng action-specific mutation có validate quyền.
+
+### P2 - Cải thiện vận hành
+
+1. Bổ sung audit log cho thao tác nhạy cảm (xem/sửa credentials, API keys, tài chính).
+2. Chuẩn hóa session/token (JWT expiry, refresh, revoke).
+3. Thêm test quyền theo role (unit + integration) cho các luồng quan trọng.
+
+## 5) Kết luận ngắn
+
+Repo có bộ tính năng vận hành MCN khá đầy đủ và UX điều hướng rõ ràng. Tuy nhiên, kiến trúc hiện tại đang thiên về tốc độ phát triển hơn là an toàn: phân quyền chủ yếu ở client, trong khi DB mở rất rộng. Để đưa lên production an toàn, cần xử lý ngay các hạng mục P0 trước khi mở rộng thêm tính năng.

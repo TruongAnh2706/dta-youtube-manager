@@ -410,6 +410,7 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                       <div className="text-gray-400 text-xs mt-0.5">{mail.verificationPhone || '-'}</div>
                     </td>
                     <td className="p-4 text-sm">
+                      {hasPermission('emails_edit') ? (
                       <select
                         title="staff-assigned"
                         value={mail.assignedTo || ''}
@@ -425,6 +426,9 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                           <option key={staff.id} value={staff.id}>{staff.name}</option>
                         ))}
                       </select>
+                      ) : (
+                        <span className="text-xs text-gray-600">{staffList.find(s => s.id === mail.assignedTo)?.name || 'Chưa giao'}</span>
+                      )}
                     </td>
                     <td className="p-4 text-sm text-gray-500 ">{mail.notes}</td>
                     <td className="p-4 text-right whitespace-nowrap">

@@ -4,6 +4,7 @@ import { Plus, Edit2, Trash2, X, ShieldAlert, AlertTriangle, CheckCircle, Histor
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
+import { usePermissions } from '../hooks/usePermissions';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
 
@@ -35,6 +36,7 @@ const STATUS_COLORS: Record<StrikeStatus, string> = {
 
 export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }: CopyrightManagerProps) {
   const { showToast } = useToast();
+  const { hasPermission } = usePermissions();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStrike, setEditingStrike] = useState<Strike | null>(null);
   const [isAnalyzingRisk, setIsAnalyzingRisk] = useState(false);
@@ -198,12 +200,14 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
           <h1 className="text-2xl font-bold text-gray-900">Bản quyền & Rủi ro</h1>
           <p className="text-sm text-gray-500 mt-1">Quản lý gậy, lịch sử kháng cáo và phân tích rủi ro</p>
         </div>
+        {hasPermission('copyright_edit') && (
         <button
           onClick={() => handleOpenModal()}
           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors"
         >
           <Plus size={16} className="mr-2" /> Thêm cảnh báo
         </button>
+        )}
       </div>
 
       {/* Stats Section */}
@@ -288,10 +292,12 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
                     <span className="text-xs text-gray-500">{TYPE_LABELS[strike.type]}</span>
                   </div>
                 </div>
+                {hasPermission('copyright_edit') && (
                 <div className="flex space-x-1">
                   <button onClick={() => handleOpenModal(strike)} className="p-1 text-gray-400 hover:text-red-600"><Edit2 size={16} /></button>
                   <button onClick={() => handleDelete(strike.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
                 </div>
+                )}
               </div>
 
               <div className="space-y-3 flex-grow">

@@ -2,6 +2,13 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { StaffRole } from '../types';
 
+const SESSION_TTL_DAYS = 7; // Phiên đăng nhập hết hạn sau 7 ngày
+
+interface SessionData {
+    staffId: string;
+    loginAt: number; // timestamp ms
+}
+
 interface CurrentUser {
     id: string;
     role: StaffRole;
@@ -22,59 +29,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        const checkSession = async () => {
-            setIsLoading(true);
-            try {
-                const savedSession = localStorage.getItem('dta-session-token');
-                if (savedSession) {
-                    if (savedSession === 'dta_master_admin_session') {
-                        setSessionUser({ id: 'admin', role: 'admin', name: 'Cố vấn DTA Studio' });
-                    } else {
-                        // Xác thực với database để chống hack Role trên localStorage
-                        const { data, error } = await supabase
-                            .from('staff_list')
-                            .select('id, role, name, status, username')
-                            .eq('id', savedSession)
-                            .single();
+        let mounted = true;
 
-                        if (data && data.status !== 'inactive') {
-                            setSessionUser({
-                                id: data.id,
-                                role: data.role as StaffRole,
-                                name: data.name
-                            });
-                        } else {
-                            localStorage.removeItem('dta-session-token');
-                            setSessionUser(null);
-                        }
+        const loadUserFromSession = async (session: any) => {
+            if (!session?.user) {
+                if (mounted) {
+                    setSessionUser(null);
+                    setIsLoading(false);
+                }
+                return;
+            }
+
+            try {
+                // Đọc staff_id gốc từ user_metadata lúc migrate
+                const staffId = session.user.user_metadata?.staff_id;
+                
+                if (staffId) {
+                    const { data, error } = await supabase
+                        .from('staff_list')
+                        .select('id, role, name, status')
+                        .eq('id', staffId)
+                        .single();
+
+                    if (error) {
+                        console.error('Lỗi khi tải thông tin nhân viên:', error.message);
+                        alert(`Lỗi RLS: Bạn đã đăng nhập Auth thành công, nhưng Database từ chối quyền truy cập! Thông báo lỗi: ${error.message}\nHãy đăng nhập Supabase -> Table Editor -> staff_list -> Tắt RLS (Disable RLS).`);
                     }
+
+                    if (data && data.status !== 'inactive' && mounted) {
+                        setSessionUser({
+                            id: data.id,
+                            role: data.role as StaffRole,
+                            name: data.name
+                        });
+                    } else if (mounted) {
+                        setSessionUser(null);
+                    }
+                } else {
+                    if (mounted) setSessionUser(null);
                 }
             } catch (err) {
-                console.error('Lỗi khi kiểm tra phiên đăng nhập:', err);
+                console.error('Lỗi khi tải thông tin nhân viên:', err);
             } finally {
-                setIsLoading(false);
+                if (mounted) setIsLoading(false);
             }
         };
 
-        checkSession();
+        // Khởi tạo ban đầu
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            loadUserFromSession(session);
+        });
+
+        // Lắng nghe sự kiện đăng nhập/đăng xuất
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            loadUserFromSession(session);
+        });
+
+        return () => {
+            mounted = false;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const setCurrentUser = (user: CurrentUser | null) => {
-        if (user) {
-            // Đổi ID hardcode auth để chống đoán mã
-            const safeId = user.id === 'admin' ? 'dta_master_admin_session' : user.id;
-            localStorage.setItem('dta-session-token', safeId);
-            setSessionUser(user);
-        } else {
-            localStorage.removeItem('dta-session-token');
-            setSessionUser(null);
-        }
+        setSessionUser(user);
     };
 
-    const logout = () => {
-        localStorage.removeItem('dta-session-token');
-        // Xoá nốt cả localStorage cũ rác cũ
-        localStorage.removeItem('yt-current-user');
+    const logout = async () => {
+        await supabase.auth.signOut();
         setSessionUser(null);
     };
 

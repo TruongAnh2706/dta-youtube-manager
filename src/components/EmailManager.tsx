@@ -100,7 +100,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
           dueDate: new Date().toISOString().split('T')[0],
           videoType: 'long',
           priority: 'medium',
-          notes: `Tiến hành ngâm và lập kênh cho email: ${formData.email} \nPass: ${formData.password} \nKhôi phục: ${formData.recoveryEmail}\nXác minh SĐT: ${formData.verificationPhone}\nKênh dự kiến: ${formData.channelCode}`,
+          notes: `Tiến hành ngâm và lập kênh cho email: ${formData.email}\nXem thông tin chi tiết tại tab Quản lý Email.\nKênh dự kiến: ${formData.channelCode}`,
           isClaimable: false
         };
         setTasks(prev => [...prev, newTask]);
@@ -132,7 +132,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
           dueDate: new Date().toISOString().split('T')[0],
           videoType: 'long',
           priority: 'medium',
-          notes: `Tiến hành ngâm và lập kênh cho email: ${formData.email} \nPass: ${formData.password} \nKhôi phục: ${formData.recoveryEmail}\nXác minh SĐT: ${formData.verificationPhone}\nKênh dự kiến: ${formData.channelCode}`,
+          notes: `Tiến hành ngâm và lập kênh cho email: ${formData.email}\nXem thông tin chi tiết tại tab Quản lý Email.\nKênh dự kiến: ${formData.channelCode}`,
           isClaimable: false
         };
         setTasks(prev => [...prev, newTask]);
@@ -182,7 +182,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
       dueDate: new Date().toISOString().split('T')[0],
       videoType: 'long',
       priority: 'medium',
-      notes: `Tiến hành ngâm và lập kênh cho email: ${em.email} \\nPass: ${em.password} \\nKhôi phục: ${em.recoveryEmail}\\nXác minh SĐT: ${em.verificationPhone}\\nKênh dự kiến: ${em.channelCode}`,
+      notes: `Tiến hành ngâm và lập kênh cho email: ${em.email}\nXem thông tin chi tiết tại tab Quản lý Email.\nKênh dự kiến: ${em.channelCode}`,
       isClaimable: false
     })) : [];
 
@@ -205,13 +205,10 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
 
       const topicNames = em.targetTopicIds?.map(tid => topics.find(t => t.id === tid)?.name).filter(Boolean).join(', ') || '';
 
+      // P1.3: Không export password/2FA ra Excel
       return {
         'Mã Kênh': em.channelCode || '',
         'Email': em.email || '',
-        'Mật khẩu': em.password || '',
-        'Email Khôi Phục': em.recoveryEmail || '',
-        '2FA': em.twoFactorAuth || '',
-        'SĐT Xác minh': em.verificationPhone || '',
         'Trạng thái': statusText,
         'Ghi chú': em.notes || '',
         'Chủ đề dự kiến': topicNames
@@ -226,6 +223,29 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     
     showToast(`Đã xuất ${selectedData.length} email ra file Excel`, 'success');
     setSelectedIds([]);
+  };
+
+  const handleExportAll = () => {
+    if (filteredEmails.length === 0) return;
+    const exportData = filteredEmails.map(em => {
+      const statusObj = systemSettings?.emailStatuses?.find(s => s.id === em.status);
+      const statusText = statusObj ? statusObj.label : em.status;
+      const staffName = staffList.find(s => s.id === em.assignedTo)?.name || '';
+      const linkedChannel = channels?.find(c => c.email?.toLowerCase() === em.email.toLowerCase());
+      return {
+        'Mã Kênh': em.channelCode || '',
+        'Email': em.email,
+        'Kênh liên kết': linkedChannel?.name || '',
+        'Nhân sự': staffName,
+        'Trạng thái': statusText,
+        'Ghi chú': em.notes || ''
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Emails');
+    XLSX.writeFile(wb, `DanhSachEmail_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`Đã xuất ${filteredEmails.length} email ra file Excel`, 'success');
   };
 
   const downloadTemplate = () => {
@@ -422,6 +442,9 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
         <div className="flex flex-wrap gap-2">
           {hasPermission('emails_edit') && (
             <>
+              <button onClick={handleExportAll} disabled={filteredEmails.length === 0} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50">
+                <Download size={16} className="mr-2" /> Xuất Excel
+              </button>
               <button onClick={downloadTemplate} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
                 <FileDown size={16} className="mr-2" /> File mẫu
               </button>
@@ -610,9 +633,11 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                         <button onClick={() => setViewingEmail(email)} className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors" title="Xem chi tiết">
                           <Eye size={16} />
                         </button>
+                        {hasPermission('emails_edit') && (
                         <button onClick={() => handleOpenModal(email)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Sửa">
                           <Edit2 size={16} />
                         </button>
+                        )}
                         {hasPermission('emails_edit') && (
                           <button onClick={() => handleDelete(email.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors" title="Xóa">
                             <Trash2 size={16} />

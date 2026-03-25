@@ -899,7 +899,8 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     }
 
     const isPublic = !channel.allowedStaffIds || channel.allowedStaffIds.length === 0;
-    const isAllowed = currentUser?.role === 'admin' || currentUser?.role === 'manager' || isPublic || (currentUser && channel.allowedStaffIds?.includes(currentUser.id));
+    const isLeaderOrAbove = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'leader';
+    const isAllowed = isLeaderOrAbove || (!isPublic && currentUser && channel.allowedStaffIds?.includes(currentUser.id));
     const matchesStatus = filterStatus === 'all' || (filterStatus === 'dead' ? channel.status === 'dead' : channel.status !== 'dead');
 
     return matchesSearch && matchesTopic && matchesNiche && isAllowed && matchesStatus;
@@ -914,7 +915,8 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
   // Calculate viewable topics / channels for privacy
   const viewableSourceChannels = sourceChannels.filter(channel => {
     const isPublic = !channel.allowedStaffIds || channel.allowedStaffIds.length === 0;
-    return currentUser?.role === 'admin' || currentUser?.role === 'manager' || isPublic || (currentUser && channel.allowedStaffIds?.includes(currentUser.id));
+    const isLeaderOrAbove = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'leader';
+    return isLeaderOrAbove || (!isPublic && currentUser && channel.allowedStaffIds?.includes(currentUser.id));
   });
   
   const availableTopicIds = new Set(viewableSourceChannels.flatMap(c => c.topicIds || []));
@@ -1236,7 +1238,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                       {/* Hiển thị những nhân viên đang được share */}
                       <div className="flex flex-wrap gap-1 mt-1">
                         {(!channel.allowedStaffIds || channel.allowedStaffIds.length === 0) ? (
-                          <span className="text-[10px] text-gray-400 italic bg-gray-100 px-1.5 py-0.5 rounded">Công khai (Tất cả)</span>
+                          <span className="text-[10px] text-gray-400 italic bg-gray-100 px-1.5 py-0.5 rounded">Leader trở lên</span>
                         ) : (
                           channel.allowedStaffIds.map(stId => {
                             const staf = staffList.find(s => s.id === stId);

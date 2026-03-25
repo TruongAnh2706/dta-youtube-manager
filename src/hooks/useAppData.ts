@@ -23,7 +23,9 @@ export function useAppData(currentUser: any) {
     const [licenses, setLicenses] = useState<License[]>([]);
     const [competitors, setCompetitors] = useState<Competitor[]>([]);
     const [managedEmails, setManagedEmails] = useState<ManagedEmail[]>([]);
-    const [isDataLoaded, setIsDataLoaded] = useState(false);
+    const [isWave1Loaded, setIsWave1Loaded] = useState(false);
+    const [isWave2Loaded, setIsWave2Loaded] = useState(false);
+    const isDataLoaded = isWave1Loaded && isWave2Loaded;
     const [systemSettings, setSystemSettings] = useState<SystemSettings>({
         youtubeApiKeys: [],
         geminiApiKeys: [],
@@ -63,9 +65,9 @@ export function useAppData(currentUser: any) {
         return activeKeys[0]?.key || '';
     }, [systemSettings]);
 
-    // Automatically seed default admin if the loaded staffList is still empty
+    // P1.2: Seed admin không bao gồm password (password được quản lý bởi server)
     useEffect(() => {
-        if (isDataLoaded && staffList.length === 0) {
+        if (isWave1Loaded && staffList.length === 0) {
             setStaffList([{
                 id: "dta_admin_01",
                 name: "Đức Trường (CEO)",
@@ -74,14 +76,14 @@ export function useAppData(currentUser: any) {
                 email: "ductruong.onl@gmail.com",
                 phone: "09662775506",
                 username: "admin",
-                password: "1",
+                password: "",  // Password được quản lý bởi server (bcrypt)
                 assignedChannelIds: [],
                 status: "online",
                 baseSalary: 20000000,
                 managedEmailCount: 0
             }]);
         }
-    }, [staffList.length]);
+    }, [staffList.length, isWave1Loaded]);
 
     const rotateYoutubeKey = useCallback(() => {
         const keys = systemSettings?.youtubeApiKeys || [];
@@ -152,18 +154,25 @@ export function useAppData(currentUser: any) {
                 console.log('🔄 Đang kéo dữ liệu cốt lõi (Wave 1)...');
                 
                 // WAVE 1: Dữ liệu quan trọng cần để build UI khung
-                const [
-                    settingsRes, staffRes, channelsRes, topicsRes, 
-                    sourceChannelsRes, accountsRes, categoriesRes
-                ] = await Promise.all([
-                    supabase.from('system_settings').select('*'),
-                    supabase.from('staff_list').select('*'),
+                // P1.2: staff_list chỉ select cột cần thiết (KHÔNG lấy password)
+                const isAdmin = currentUser?.role === 'admin';
+                
+                const baseQueries = [
+                    isAdmin 
+                        ? supabase.from('system_settings').select('*')
+                        : Promise.resolve({ data: null }),  // P1.2: Non-admin không load API keys
+                    supabase.from('staff_list').select('id, name, role, skills, email, phone, username, assigned_channel_ids, status, base_salary, managed_email_count, kpi_targets'),
                     supabase.from('channels').select('*'),
                     supabase.from('topics').select('*'),
                     supabase.from('source_channels').select('*'),
                     supabase.from('financial_accounts').select('*'),
                     supabase.from('transaction_categories').select('*')
-                ]);
+                ];
+
+                const [
+                    settingsRes, staffRes, channelsRes, topicsRes, 
+                    sourceChannelsRes, accountsRes, categoriesRes
+                ] = await Promise.all(baseQueries);
 
                 if (settingsRes.data && settingsRes.data.length > 0) {
                     const parsedSettings = toCamelCase(settingsRes.data[0]) as any;
@@ -191,6 +200,7 @@ export function useAppData(currentUser: any) {
                 if (categoriesRes.data) setCategories(toCamelCase(categoriesRes.data));
 
                 console.log('✅ Wave 1 Xong. Đang tải dữ liệu Tab phụ (Wave 2)...');
+                setIsWave1Loaded(true);
                 
                 // WAVE 2: Chạy background để không chặn UI render
                 setTimeout(async () => {
@@ -220,7 +230,7 @@ export function useAppData(currentUser: any) {
                         if (competitorsRes.data) setCompetitors(toCamelCase(competitorsRes.data));
                         if (emailsRes.data) setManagedEmails(toCamelCase(emailsRes.data));
                         
-                        setIsDataLoaded(true);
+                        setIsWave2Loaded(true);
                         console.log('✅ Wave 2 Load Complete!');
                     } catch (err) {
                         console.error('❌ Supabase Wave 2 Error:', err);
@@ -250,6 +260,7 @@ export function useAppData(currentUser: any) {
         managedEmails, setManagedEmails,
         systemSettings, setSystemSettings,
         activeYoutubeKey, activeGeminiKey, rotateYoutubeKey,
-        handleRemoteUpdate, appData
+        handleRemoteUpdate, appData,
+        isWave1Loaded, isWave2Loaded, isDataLoaded
     };
 }

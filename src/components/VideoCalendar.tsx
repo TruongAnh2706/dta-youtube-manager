@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Asset, VideoTask, TaskStatus, Channel, Staff } from '../types';
+import { Asset, VideoTask, TaskStatus, Channel, Staff, ManagedEmail } from '../types';
 import {
   Plus, Edit2, Trash2, X, ChevronRight, ChevronLeft,
   Calendar as CalendarIcon, Sparkles, AlertCircle, Clock,
@@ -27,11 +27,12 @@ interface VideoCalendarProps {
   currentUser: { role: string; name: string } | null;
   geminiApiKey?: string;
   assets?: Asset[];
+  managedEmails?: ManagedEmail[];
   systemSettings?: import('../types').SystemSettings;
   setActiveTab?: (tab: string) => void;
 }
 
-export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [], currentUser, geminiApiKey, systemSettings, setActiveTab }: VideoCalendarProps) {
+export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [], currentUser, geminiApiKey, managedEmails = [], systemSettings, setActiveTab }: VideoCalendarProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -230,7 +231,11 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
     const _calendarDays = eachDayOfInterval({ start: _startDate, end: _endDate });
     const realTaskKeys = new Set(tasks.map(t => `${t.channelId}-${t.dueDate}-${t.publishTime}`));
 
-    channels.forEach(channel => {
+    // Chỉ gen lịch cho kênh đã liên kết với email thực sự trong hệ thống
+    const linkedChannels = channels.filter(c => 
+      c.email && managedEmails.some(em => em.email.toLowerCase() === c.email!.toLowerCase())
+    );
+    linkedChannels.forEach(channel => {
       if (channel.postingSchedules && channel.postingSchedules.length > 0) {
         channel.postingSchedules.forEach(schedule => {
           const dayMap: { [key: string]: number } = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -265,14 +270,16 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
       }
     });
     return vTasks;
-  }, [channels, currentDate, tasks]);
+  }, [channels, currentDate, tasks, managedEmails]);
 
   const viewableTasks = useMemo(() => {
     let list: VideoTask[] = [];
 
     // Lọc ra các ID của Kênh có bật Lịch Đăng Định Kỳ
+    // Chỉ tính kênh có lịch đăng VÀ đã liên kết email thực sự
     const activeScheduleChannelIds = channels
       .filter(c => c.postingSchedules && c.postingSchedules.length > 0)
+      .filter(c => c.email && managedEmails.some(em => em.email.toLowerCase() === c.email!.toLowerCase()))
       .map(c => c.id);
 
     // Chỉ những task (cả gốc lẫn tùy biến) thuộc về kênh có Lịch đăng mới được xuất hiện

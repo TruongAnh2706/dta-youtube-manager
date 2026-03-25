@@ -13,10 +13,14 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
     const isInitialMount = useRef(true);
     const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const tablesMap = [
+    // P1.4: staff_list và system_settings KHÔNG auto-save push từ client
+    // staff_list chỉ ghi qua server API (Supabase Auth endpoints)
+    // system_settings chỉ admin đọc, ghi qua server (service_role key)
+    
+    // Danh sách bảng cho AUTO-SAVE PUSH (phần 1) - KHÔNG có staff_list
+    const pushTablesMap = [
         { key: 'channels', table: 'channels' },
         { key: 'topics', table: 'topics' },
-        { key: 'staffList', table: 'staff_list' },
         { key: 'sourceChannels', table: 'source_channels' },
         { key: 'tasks', table: 'video_tasks' },
         { key: 'financials', table: 'financials' },
@@ -29,6 +33,12 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
         { key: 'licenses', table: 'licenses' },
         { key: 'competitors', table: 'competitors' },
         { key: 'managedEmails', table: 'managed_emails' }
+    ];
+    
+    // Danh sách bảng cho REALTIME LISTENER (phần 2) - CÓ staff_list để kéo data mới về
+    const tablesMap = [
+        ...pushTablesMap,
+        { key: 'staffList', table: 'staff_list' }
     ];
 
     // 1. NGHIỆP VỤ AUTO-SAVE (Đẩy lên DB)
@@ -47,7 +57,7 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
             const prev = prevDataRef.current;
             const current = dataToSync;
 
-            for (const { key, table } of tablesMap) {
+            for (const { key, table } of pushTablesMap) {
                 const prevData = prev[key];
                 const currentData = current[key];
 

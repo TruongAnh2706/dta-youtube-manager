@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Channel, Topic, Proxy, SourceChannel, VideoTask, Staff, FinancialRecord, Strike, ManagedEmail } from '../types';
-import { Plus, Edit2, Trash2, X, ExternalLink, Search, Eye, EyeOff, ShieldAlert, RefreshCw, Upload, FileDown, AlertCircle, Sparkles, Copy, Check, Download, Clock, Calendar, User, DollarSign, BarChart2, Users, KanbanSquare, ShieldCheck } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ExternalLink, Search, Eye, EyeOff, ShieldAlert, RefreshCw, Upload, FileDown, AlertCircle, Sparkles, Copy, Check, Download, Clock, Calendar, User, DollarSign, BarChart2, Users, KanbanSquare, ShieldCheck, Mail, Link2 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
@@ -49,11 +49,13 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [fetchError, setFetchError] = useState('');
   const [editingStaffIds, setEditingStaffIds] = useState<string[]>([]);
   const [selectedManagedEmailId, setSelectedManagedEmailId] = useState<string>('');
+  const [sourceTopicFilter, setSourceTopicFilter] = useState<string>('all');
 
   const [formData, setFormData] = useState<Omit<Channel, 'id'>>({
     channelCode: '', name: '', url: '', avatarUrl: '', subscribers: 0, totalViews: 0, topicIds: [], status: 'active', notes: '',
     email: '', password: '', recoveryEmail: '', twoFactorCode: '', proxyId: '',
-    postingSchedules: [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
+    postingSchedules: [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }],
+    linkedSourceChannelIds: []
   });
 
   const [isBulkImporting, setIsBulkImporting] = useState(false);
@@ -668,7 +670,8 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         channelCode: channel.channelCode || '',
         name: channel.name, url: channel.url, avatarUrl: channel.avatarUrl || '', subscribers: channel.subscribers, totalViews: channel.totalViews || 0, topicIds: channel.topicIds, status: channel.status, notes: channel.notes,
         email: channel.email || '', password: channel.password || '', recoveryEmail: channel.recoveryEmail || '', twoFactorCode: channel.twoFactorCode || '', proxyId: channel.proxyId || '',
-        postingSchedules: channel.postingSchedules || [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
+        postingSchedules: channel.postingSchedules || [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }],
+        linkedSourceChannelIds: channel.linkedSourceChannelIds || []
       });
       const assignedToChannel = staffList.filter(s => (s.assignedChannelIds || []).includes(channel.id)).map(s => s.id);
       setEditingStaffIds(assignedToChannel);
@@ -680,7 +683,8 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         channelCode: '',
         name: '', url: '', avatarUrl: '', subscribers: 0, totalViews: 0, topicIds: [], status: 'active', notes: '',
         email: '', password: '', recoveryEmail: '', twoFactorCode: '', proxyId: '',
-        postingSchedules: [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }]
+        postingSchedules: [{ time: '18:00', days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] }],
+        linkedSourceChannelIds: []
       });
       const defaultStaffIds = currentUser && currentUser.role !== 'admin' ? [currentUser.id] : [];
       setEditingStaffIds(defaultStaffIds);
@@ -771,13 +775,19 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     const channelIdToUse = editingChannel ? editingChannel.id : Date.now().toString();
     const finalChannelCode = formData.channelCode || channelIdToUse;
 
+    // Tự động gán người thao tác làm nhân sự quản lý kênh (nếu không phải admin)
+    let finalStaffIds = [...editingStaffIds];
+    if (currentUser && currentUser.role !== 'admin' && !finalStaffIds.includes(currentUser.id)) {
+      finalStaffIds.push(currentUser.id);
+    }
+
     if (editingChannel) {
       setChannels(prev => prev.map(c => c.id === editingChannel.id ? { ...c, ...formData } : c));
-      updateStaffChannelAssignment(editingChannel.id, editingStaffIds);
+      updateStaffChannelAssignment(editingChannel.id, finalStaffIds);
       showToast('Đã cập nhật thông tin kênh thành công!', 'success');
     } else {
       setChannels(prev => [...prev, { id: channelIdToUse, ...formData }]);
-      updateStaffChannelAssignment(channelIdToUse, editingStaffIds);
+      updateStaffChannelAssignment(channelIdToUse, finalStaffIds);
       showToast('Đã thêm kênh mới thành công!', 'success');
     }
 
@@ -1358,39 +1368,44 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                   </div>
                 </div>
 
-                {/* Thông tin bảo mật */}
+                {/* Liên kết Email từ kho - Hiển thị cho mọi role có channels_edit */}
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                  <h3 className="text-sm font-semibold text-blue-900 mb-3 flex items-center">
+                    <Mail size={16} className="mr-2" /> Liên kết Email từ kho
+                    {selectedManagedEmailId && <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">✓ Đã chọn</span>}
+                  </h3>
+                  <select
+                    value={selectedManagedEmailId}
+                    onChange={(e) => {
+                       const val = e.target.value;
+                       setSelectedManagedEmailId(val);
+                       if (val !== '') {
+                          const em = managedEmails?.find(m => m.id === val);
+                          if (em) setFormData(prev => ({ ...prev, email: em.email, password: em.password || prev.password, recoveryEmail: em.recoveryEmail || prev.recoveryEmail, twoFactorCode: em.twoFactorAuth || prev.twoFactorCode }));
+                       } else {
+                          setFormData(prev => ({ ...prev, email: '', password: '', recoveryEmail: '', twoFactorCode: '' }));
+                       }
+                    }}
+                    className="w-full border border-blue-200 rounded-lg px-3 py-2 focus:ring-blue-500 bg-white"
+                  >
+                     <option value="">-- Chọn email từ kho đã gán --</option>
+                     {managedEmails?.filter(m => !channels.some(c => c.email?.toLowerCase() === m.email.toLowerCase() && c.id !== editingChannel?.id)).map(em => (
+                        <option key={em.id} value={em.id}>{em.email} {em.channelCode ? `(Mã dự kiến: ${em.channelCode})` : ''}</option>
+                     ))}
+                  </select>
+                  {selectedManagedEmailId === '' && (
+                     <input type="email" placeholder="Hoặc nhập email thủ công" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full border border-blue-200 rounded-lg px-3 py-2 focus:ring-blue-500 bg-white mt-2" />
+                  )}
+                  {managedEmails?.length === 0 && (
+                    <p className="text-xs text-blue-600 italic mt-2">Chưa có email nào được gán. Liên hệ quản lý để được cấp email.</p>
+                  )}
+                </div>
+
+                {/* Thông tin bảo mật - Chỉ admin/manager thấy */}
                 {hasPermission('channels_view_sensitive') && (
                   <div className="bg-red-50 p-4 rounded-lg border border-red-100">
                     <h3 className="text-sm font-semibold text-red-900 mb-3 flex items-center"><ShieldAlert size={16} className="mr-2" /> Thông tin Bảo mật (Nhạy cảm)</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-red-800 mb-1 flex justify-between">
-                          <span>Email đăng nhập</span>
-                          {selectedManagedEmailId && <span className="text-[10px] bg-green-100 text-green-700 px-1 py-0.5 rounded">AutoFill Active</span>}
-                        </label>
-                        <select
-                          value={selectedManagedEmailId}
-                          onChange={(e) => {
-                             const val = e.target.value;
-                             setSelectedManagedEmailId(val);
-                             if (val !== '') {
-                                const em = managedEmails?.find(m => m.id === val);
-                                if (em) setFormData(prev => ({ ...prev, email: em.email, password: em.password || prev.password, recoveryEmail: em.recoveryEmail || prev.recoveryEmail, twoFactorCode: em.twoFactorAuth || prev.twoFactorCode }));
-                             } else {
-                                setFormData(prev => ({ ...prev, email: '', password: '', recoveryEmail: '', twoFactorCode: '' }));
-                             }
-                          }}
-                          className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500 mb-2 bg-white"
-                        >
-                           <option value="">-- Tự nhập thủ công --</option>
-                           {managedEmails?.filter(m => !channels.some(c => c.email?.toLowerCase() === m.email.toLowerCase() && c.id !== editingChannel?.id)).map(em => (
-                              <option key={em.id} value={em.id}>{em.email} {em.channelCode ? `(Mã dự kiến: ${em.channelCode})` : ''}</option>
-                           ))}
-                        </select>
-                        {selectedManagedEmailId === '' && (
-                           <input type="email" placeholder="Nhập email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500 bg-white" />
-                        )}
-                      </div>
                       <div><label className="block text-sm font-medium text-red-800 mb-1">Mật khẩu</label><input type="text" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500" /></div>
                       <div><label className="block text-sm font-medium text-red-800 mb-1">Email khôi phục</label><input type="email" value={formData.recoveryEmail} onChange={e => setFormData({ ...formData, recoveryEmail: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500" /></div>
                       <div><label className="block text-sm font-medium text-red-800 mb-1">Mã 2FA (Secret Key)</label><input type="text" value={formData.twoFactorCode} onChange={e => setFormData({ ...formData, twoFactorCode: e.target.value })} className="w-full border border-red-200 rounded-lg px-3 py-2 focus:ring-red-500" placeholder="VD: JBSWY3DPEHPK3PXP" /></div>
@@ -1509,6 +1524,132 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                     ))}
                   </div>
                 </div>
+
+                {/* Liên kết Kênh Nguồn */}
+                <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100">
+                  <h3 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center">
+                    <Link2 size={16} className="mr-2" /> Liên kết Kênh Nguồn
+                    {(formData.linkedSourceChannelIds || []).length > 0 && (
+                      <span className="ml-2 text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded font-bold">
+                        {(formData.linkedSourceChannelIds || []).length} kênh đã chọn
+                      </span>
+                    )}
+                  </h3>
+
+                  {/* Bộ lọc theo chủ đề */}
+                  <div className="mb-3">
+                    <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">Lọc theo Chủ đề</label>
+                    <select
+                      value={sourceTopicFilter}
+                      onChange={e => setSourceTopicFilter(e.target.value)}
+                      className="w-full border border-emerald-200 rounded-lg px-3 py-2 focus:ring-emerald-500 bg-white text-sm"
+                    >
+                      <option value="all">-- Tất cả chủ đề --</option>
+                      {topics.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+
+                  {/* Danh sách kênh nguồn để chọn */}
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 mb-3 pr-1">
+                    {sourceChannels
+                      .filter(sc => {
+                        // Lọc theo chủ đề
+                        const matchesTopic = sourceTopicFilter === 'all' || (sc.topicIds || []).includes(sourceTopicFilter);
+                        // Lọc theo quyền: admin thấy tất cả, member chỉ thấy kênh được giao
+                        const matchesPermission = currentUser?.role === 'admin' || currentUser?.role === 'manager'
+                          || (sc.allowedStaffIds || []).includes(currentUser?.id || '');
+                        return matchesTopic && matchesPermission;
+                      })
+                      .map(sc => {
+                        const isLinked = (formData.linkedSourceChannelIds || []).includes(sc.id);
+                        return (
+                          <button
+                            key={sc.id}
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                linkedSourceChannelIds: isLinked
+                                  ? (prev.linkedSourceChannelIds || []).filter(id => id !== sc.id)
+                                  : [...(prev.linkedSourceChannelIds || []), sc.id]
+                              }));
+                            }}
+                            className={`w-full flex items-center p-2 rounded-lg border transition-all text-left ${
+                              isLinked
+                                ? 'bg-emerald-100 border-emerald-400 shadow-sm ring-1 ring-emerald-300'
+                                : 'bg-white border-gray-200 hover:border-emerald-300 hover:bg-emerald-50/50'
+                            }`}
+                          >
+                            {/* Avatar */}
+                            {sc.avatarUrl ? (
+                              <img src={sc.avatarUrl} alt={sc.name} className="w-8 h-8 rounded-full object-cover border border-gray-200 shrink-0 mr-2.5" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold text-xs shrink-0 mr-2.5">
+                                {(sc.name || '?').charAt(0).toUpperCase()}
+                              </div>
+                            )}
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">{sc.name}</p>
+                              <p className="text-[10px] text-gray-400 truncate">{sc.url}</p>
+                            </div>
+                            {/* Check indicator */}
+                            {isLinked && (
+                              <div className="ml-2 shrink-0">
+                                <Check size={16} className="text-emerald-600" />
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    {sourceChannels.filter(sc => {
+                      const matchesTopic = sourceTopicFilter === 'all' || (sc.topicIds || []).includes(sourceTopicFilter);
+                      const matchesPermission = currentUser?.role === 'admin' || currentUser?.role === 'manager'
+                        || (sc.allowedStaffIds || []).includes(currentUser?.id || '');
+                      return matchesTopic && matchesPermission;
+                    }).length === 0 && (
+                      <p className="text-xs text-emerald-600 italic text-center py-3">
+                        {sourceTopicFilter === 'all' ? 'Chưa có kênh nguồn nào được gán cho bạn.' : 'Không có kênh nguồn nào thuộc chủ đề này.'}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Hiển thị kênh nguồn đã chọn */}
+                  {(formData.linkedSourceChannelIds || []).length > 0 && (
+                    <div className="border-t border-emerald-200 pt-3">
+                      <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-2">Kênh nguồn đã liên kết</label>
+                      <div className="flex flex-wrap gap-2">
+                        {(formData.linkedSourceChannelIds || []).map(scId => {
+                          const sc = sourceChannels.find(s => s.id === scId);
+                          if (!sc) return null;
+                          return (
+                            <div key={scId} className="flex items-center bg-white border border-emerald-200 rounded-full pl-1 pr-2 py-0.5 shadow-sm">
+                              {sc.avatarUrl ? (
+                                <img src={sc.avatarUrl} alt={sc.name} className="w-5 h-5 rounded-full object-cover mr-1.5" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-[8px] font-bold text-gray-500 mr-1.5">
+                                  {(sc.name || '?').charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                              <span className="text-[11px] font-medium text-gray-800 mr-1 max-w-[120px] truncate">{sc.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setFormData(prev => ({
+                                  ...prev,
+                                  linkedSourceChannelIds: (prev.linkedSourceChannelIds || []).filter(id => id !== scId)
+                                }))}
+                                className="text-gray-400 hover:text-red-500 transition-colors"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <div className="flex justify-between items-center mb-2">
                     <label className="block text-sm font-medium text-gray-700">Chủ đề</label>

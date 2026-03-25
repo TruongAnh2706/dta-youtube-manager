@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Layers } from 'lucide-react';
+import { Plus, Search, Layers, Download } from 'lucide-react';
 import { TopicCard } from './topics/TopicCard';
 import { TopicModal } from './topics/TopicModal';
 import { TopicFilters } from './topics/TopicFilters';
@@ -7,6 +7,7 @@ import { Topic, Staff, DEFAULT_NICHES, Channel, SourceChannel } from '../types';
 import { supabase } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
+import * as XLSX from 'xlsx';
 
 interface TopicsProps {
   topics: Topic[];
@@ -87,6 +88,23 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
     }
   };
 
+  const handleExport = () => {
+    if (filteredTopics.length === 0) return;
+    const exportData = filteredTopics.map(t => ({
+      'Tên chủ đề': t.name || '',
+      'Nhóm CĐ (Niche)': t.niche || 'Khác',
+      'Quốc gia': t.country || 'Vietnam',
+      'Mô tả': t.description || '',
+      'Tags': (t.tags || []).join(', '),
+      'Hashtags': (t.hashtags || []).join(', ')
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Topics');
+    XLSX.writeFile(wb, `DanhSachChuDe_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`Đã xuất ${filteredTopics.length} chủ đề ra file Excel`, 'success');
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -94,14 +112,19 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
           <h1 className="text-2xl font-bold text-gray-900">Quản lý Chủ đề</h1>
           <p className="text-sm text-gray-500 mt-1">Nghiên cứu và lưu trữ thông tin ngách chi tiết</p>
         </div>
-        {hasPermission('topics_edit') && (
-          <button
-            onClick={() => handleOpenModal()}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm self-start md:self-center"
-          >
-            <Plus size={16} className="mr-2" /> Thêm chủ đề
+        <div className="flex flex-wrap gap-2">
+          <button onClick={handleExport} disabled={filteredTopics.length === 0} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50 self-start md:self-center">
+            <Download size={16} className="mr-2" /> Xuất Excel
           </button>
-        )}
+          {hasPermission('topics_edit') && (
+            <button
+              onClick={() => handleOpenModal()}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm self-start md:self-center"
+            >
+              <Plus size={16} className="mr-2" /> Thêm chủ đề
+            </button>
+          )}
+        </div>
       </div>
 
       <TopicFilters

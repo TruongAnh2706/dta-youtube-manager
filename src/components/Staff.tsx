@@ -100,37 +100,126 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
     setEditingStaff(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingStaff) {
-      setStaffList(staffList.map(s => s.id === editingStaff.id ? { ...s, ...formData } : s));
-      showToast('Đã cập nhật thông tin nhân sự thành công!', 'success');
-    } else {
-      // Đảm bảo có Dummy data nếu người dùng bỏ trống lúc tạo nhanh
-      const newStaffId = Date.now().toString();
-      const finalEmail = formData.email.trim() === '' ? `no-email-${newStaffId}@dta.local` : formData.email;
-      const finalUsername = formData.username.trim() === '' ? `user_${newStaffId}` : formData.username;
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-      setStaffList([...staffList, {
-        id: newStaffId,
-        ...formData,
-        email: finalEmail,
-        username: finalUsername
-      }]);
-      showToast('Đã thêm nhân sự mới thành công!', 'success');
+  // Constants
+  const API_BASE = 'http://localhost:3001';
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingStaff) {
+        // Cập nhật Database (nếu có pass mới gọi update_password)
+        const updatedData = { ...formData };
+        // Xóa password rỗng để tránh ghi đè DB
+        if (!updatedData.password) {
+           delete updatedData.password;
+        }
+        
+        // Đổi mật khẩu qua Supabase Auth nếu có nhập password mới
+        if (formData.password && formData.password.trim() !== '') {
+           // Validate: Supabase Auth yêu cầu password >= 6 ký tự
+           if (formData.password.trim().length < 6) {
+               throw new Error('Mật khẩu phải có ít nhất 6 ký tự (yêu cầu của Supabase Auth).');
+           }
+           
+           const staffEmail = editingStaff.email || formData.email;
+           if (!staffEmail) {
+               throw new Error('Không tìm thấy Email của nhân sự để đổi mật khẩu.');
+           }
+           
+           const passRes = await fetch(`${API_BASE}/api/staff/update-password`, {
+               method: 'POST',
+               headers: {'Content-Type': 'application/json'},
+               body: JSON.stringify({ staffId: editingStaff.id, newPassword: formData.password.trim(), email: staffEmail })
+           });
+           const passData = await passRes.json();
+           if (!passRes.ok) {
+               throw new Error(passData.error || 'Lỗi đổi mật khẩu trên hệ thống Auth.');
+           }
+           showToast('Đã đổi mật khẩu thành công! Mật khẩu mới sẽ có hiệu lực ngay.', 'success');
+           // Xóa password khỏi data update (đã xử lý riêng)
+           delete updatedData.password;
+        }
+        
+        const updateRes = await fetch(`${API_BASE}/api/staff/update`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id: editingStaff.id, ...updatedData })
+        });
+        const updateData = await updateRes.json();
+        if (!updateRes.ok) {
+            throw new Error(updateData.error || 'Lỗi lưu thông tin vào CSDL');
+        }
+        
+        setStaffList(staffList.map(s => s.id === editingStaff.id ? { ...s, ...updatedData } : s));
+        showToast('Đã cập nhật thông tin nhân sự thành công!', 'success');
+      } else {
+        // TẠO MỚI qua API Auth Admin
+        const newStaffId = Date.now().toString();
+        
+        if (!formData.email || formData.email.trim() === '') {
+            throw new Error('Bạn bắt buộc phải nhập Email cho nhân sự');
+        }
+        const finalEmail = formData.email.trim();
+
+        // Mật khẩu mặc định nếu bỏ trống
+        const passToCreate = formData.password ? formData.password : 'Dta@2026';
+
+        // Tạo username tự động từ email (phần trước @) để tránh vi phạm unique constraint
+        const autoUsername = finalEmail.split('@')[0].toLowerCase();
+        
+        const payload = {
+            id: newStaffId,
+            ...formData,
+            username: autoUsername,
+            email: finalEmail,
+            password: passToCreate
+        };
+
+        const res = await fetch(`${API_BASE}/api/staff/create`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        
+        if (!res.ok) {
+            throw new Error(data.error || 'Lỗi tạo nhân viên');
+        }
+
+        setStaffList([...staffList, data.staff]);
+        showToast('Đã thêm nhân sự mới kèm Auth Account!', 'success');
+      }
+      handleCloseModal();
+    } catch (err: any) {
+        showToast(`Lỗi: ${err.message}`, 'error');
+    } finally {
+        setIsSubmitting(false);
     }
-    handleCloseModal();
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa nhân sự này?')) {
-      setStaffList(prev => prev.filter(s => s.id !== id));
-      
-      const { error } = await supabase.from('staff_list').delete().eq('id', id);
-      if (error) {
-        showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
-      } else {
-        showToast('Đã xóa nhân sự.', 'info');
+    if (confirm('Lưu ý: Bạn xóa nhân sự này sẽ không thể khôi phục. Tài khoản Auth đi kèm cũng sẽ bị hủy. Chắc chắn?')) {
+      try {
+        const staffToDelete = staffList.find(s => s.id === id);
+        const res = await fetch(`${API_BASE}/api/staff/delete`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id, email: staffToDelete?.email })
+        });
+        const data = await res.json();
+        
+        if (!res.ok) {
+           showToast(`Lỗi xóa trên server: ${data.error}`, 'error');
+           return;
+        }
+
+        setStaffList(prev => prev.filter(s => s.id !== id));
+        showToast('Đã xóa nhân sự thành công.', 'info');
+      } catch(err: any) {
+        showToast(`Lỗi xoá dữ liệu: ${err.message}`, 'error');
       }
     }
   };
@@ -410,6 +499,7 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
 
               </div>
 
+              {hasPermission('staff_edit') && (
               <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
                 <button
                   onClick={() => handleAIPerformanceReview(staff)}
@@ -426,6 +516,7 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
                   <Edit2 size={12} className="mr-1" /> Sửa hồ sơ
                 </button>
               </div>
+              )}
             </div>
           );
         })}
@@ -484,22 +575,14 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
+                  {/* Bỏ trường Username, chỉ dùng Email */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập (Username)</label>
-                    <input
-                      type="text" value={formData.username}
-                      onChange={e => setFormData({ ...formData, username: e.target.value })}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Dùng để đăng nhập"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu (Password)</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu (Password đăng nhập)</label>
                     <input
                       type="password" value={formData.password}
                       onChange={e => setFormData({ ...formData, password: e.target.value })}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Dùng để đăng nhập"
+                      placeholder={editingStaff ? "Nhập mật khẩu mới nếu muốn đổi..." : "Nhập mật khẩu (Mặc định: Dta@2026)"}
                     />
                   </div>
                   {hasPermission('staff_view_salary') && (

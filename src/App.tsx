@@ -47,12 +47,14 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
     'calendar_view_all', 'copyright_view', 'assets_view', 'tasks_view', 'tasks_edit', 'tasks_claim'
   ],
   member: [
-    'dashboard_view', 'calendar_view', 'calendar_edit', 'assets_view', 'tasks_view', 'tasks_claim'
+    'dashboard_view', 'channels_view', 'channels_edit', 'emails_view', 'calendar_view', 'calendar_edit', 'assets_view', 'tasks_view', 'tasks_claim'
   ]
 };
 
 function AppContent() {
   const { currentUser, setCurrentUser, isLoading, logout } = useAuth();
+  // P1.1: Permissions từ systemSettings (DB), fallback dùng DEFAULT
+  // Vẫn giữ localStorage để PermissionSettings UI có thể lưu/đọc
   const [rolePermissions, setRolePermissions] = useLocalStorage<RolePermissions>('yt-role-permissions', DEFAULT_PERMISSIONS);
 
   // Migration: Ensure new permissions are added to existing rolePermissions
@@ -142,6 +144,19 @@ function AppContent() {
     return (managedEmails || []).filter(e => e.assignedTo === currentStaff?.id);
   }, [managedEmails, isFullAccess, currentStaff]);
 
+  // Filter topics: member/leader chỉ thấy topics liên quan đến kênh được gán
+  const viewableTopics = React.useMemo(() => {
+    if (isFullAccess) return topics || [];
+    // Lấy tất cả topicIds từ các kênh được gán cho nhân sự này
+    const assignedTopicIds = new Set(
+      viewableChannels.flatMap(c => c.topicIds || [])
+    );
+    return (topics || []).filter(t =>
+      assignedTopicIds.has(t.id) ||
+      (t.assignees || []).includes(currentStaff?.id || '')
+    );
+  }, [topics, isFullAccess, viewableChannels]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center">
@@ -153,9 +168,7 @@ function AppContent() {
 
   if (!currentUser) {
     return (
-      <Login
-        onLogin={(role, name, id) => setCurrentUser({ role, name, id })}
-      />
+      <Login />
     );
   }
 
@@ -425,14 +438,14 @@ function AppContent() {
             />
 
             {activeTab === 'dashboard' && (
-              <Dashboard channels={viewableChannels} topics={topics} staffList={staffList} financials={viewableFinancials} tasks={viewableTasks} geminiApiKey={activeGeminiKey} currentUser={currentUser} />
+              <Dashboard channels={viewableChannels} topics={viewableTopics} staffList={staffList} financials={viewableFinancials} tasks={viewableTasks} geminiApiKey={activeGeminiKey} currentUser={currentUser} />
             )}
             {activeTab === 'emails' && (
               <EmailManager
                 emails={viewableEmails}
                 setEmails={setManagedEmails}
                 staffList={staffList}
-                topics={topics}
+                topics={viewableTopics}
                 currentUser={currentUser}
                 tasks={viewableTasks}
                 setTasks={setTasks}
@@ -444,7 +457,7 @@ function AppContent() {
               <Channels
                 channels={viewableChannels}
                 setChannels={setChannels}
-                topics={topics}
+                topics={viewableTopics}
                 setTopics={setTopics}
                 proxies={proxies}
                 privacyMode={privacyMode}
@@ -462,7 +475,7 @@ function AppContent() {
               />
             )}
             {activeTab === 'topics' && (
-              <Topics topics={topics} setTopics={setTopics} staffList={staffList} channels={channels} sourceChannels={sourceChannels} youtubeApiKey={activeYoutubeKey || ''} />
+              <Topics topics={viewableTopics} setTopics={setTopics} staffList={staffList} channels={viewableChannels} sourceChannels={viewableSourceChannels} youtubeApiKey={activeYoutubeKey || ''} />
             )}
             {activeTab === 'spy' && (
               <SpyManager
@@ -470,7 +483,7 @@ function AppContent() {
                 setSourceChannels={setSourceChannels}
                 competitors={viewableCompetitors}
                 setCompetitors={setCompetitors}
-                topics={topics}
+                topics={viewableTopics}
                 setTopics={setTopics}
                 channels={viewableChannels}
                 youtubeApiKey={activeYoutubeKey || ''}
@@ -478,7 +491,7 @@ function AppContent() {
                 rotateYoutubeKey={rotateYoutubeKey}
                 staffList={staffList}
                 currentUser={currentUser}
-                tasks={tasks}
+                tasks={viewableTasks}
                 setTasks={setTasks}
               />
             )}
@@ -502,11 +515,11 @@ function AppContent() {
               <Analysis
                 channels={viewableChannels}
                 sourceChannels={viewableSourceChannels}
-                topics={topics}
+                topics={viewableTopics}
                 geminiApiKey={activeGeminiKey}
                 currentUser={currentUser}
                 staffList={staffList}
-                tasks={tasks}
+                tasks={viewableTasks}
                 setTasks={setTasks}
               />
             )}
@@ -514,9 +527,10 @@ function AppContent() {
               <VideoCalendar
                 tasks={viewableTasks}
                 setTasks={setTasks}
-                channels={channels}
+                channels={viewableChannels}
                 staffList={staffList}
                 assets={assets}
+                managedEmails={managedEmails}
                 currentUser={currentUser}
                 geminiApiKey={activeGeminiKey}
                 systemSettings={systemSettings}
@@ -525,10 +539,10 @@ function AppContent() {
             )}
             {activeTab === 'tasks' && (
               <TaskManager
-                tasks={tasks}
+                tasks={viewableTasks}
                 setTasks={setTasks}
                 staffList={staffList}
-                channels={channels}
+                channels={viewableChannels}
                 assets={assets}
                 currentUser={currentUser}
                 dailyReports={dailyReports}
@@ -538,7 +552,7 @@ function AppContent() {
             )}
             {activeTab === 'finance' && (
               <FinanceManager
-                financials={financials}
+                financials={viewableFinancials}
                 setFinancials={setFinancials}
                 transactions={transactions}
                 setTransactions={setTransactions}
@@ -546,20 +560,20 @@ function AppContent() {
                 setAccounts={setAccounts}
                 categories={categories}
                 setCategories={setCategories}
-                channels={channels}
-                tasks={tasks}
+                channels={viewableChannels}
+                tasks={viewableTasks}
                 staffList={staffList}
                 geminiApiKey={activeGeminiKey}
               />
             )}
             {activeTab === 'copyright' && (
-              <CopyrightManager strikes={strikes} setStrikes={setStrikes} channels={channels} geminiApiKey={activeGeminiKey} />
+              <CopyrightManager strikes={viewableStrikes} setStrikes={setStrikes} channels={viewableChannels} geminiApiKey={activeGeminiKey} />
             )}
             {activeTab === 'assets' && (
-              <AssetManager assets={assets} setAssets={setAssets} proxies={proxies} setProxies={setProxies} topics={topics} geminiApiKey={activeGeminiKey} managedEmails={managedEmails} setManagedEmails={setManagedEmails} staffList={staffList} />
+              <AssetManager assets={assets} setAssets={setAssets} proxies={proxies} setProxies={setProxies} topics={viewableTopics} geminiApiKey={activeGeminiKey} managedEmails={viewableEmails} setManagedEmails={setManagedEmails} staffList={staffList} />
             )}
             {activeTab === 'tools' && (
-              <ToolManager licenses={licenses} setLicenses={setLicenses} privacyMode={privacyMode} topics={topics} geminiApiKey={activeGeminiKey} />
+              <ToolManager licenses={licenses} setLicenses={setLicenses} privacyMode={privacyMode} topics={viewableTopics} geminiApiKey={activeGeminiKey} />
             )}
             {activeTab === 'seo' && (
               <SeoAi geminiApiKey={activeGeminiKey} />

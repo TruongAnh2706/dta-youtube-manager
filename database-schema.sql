@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS channels (
   two_factor_code TEXT,
   proxy_id TEXT,
   posting_schedules JSONB DEFAULT '[]'::jsonb,
+  linked_source_channel_ids TEXT[] DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

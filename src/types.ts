@@ -56,6 +56,7 @@ export type Channel = {
   twoFactorCode?: string;
   proxyId?: string;
   postingSchedules?: PostingSchedule[];
+  linkedSourceChannelIds?: string[];
 };
 
 export type YoutubeVideo = {
