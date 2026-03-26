@@ -41,19 +41,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
 
             try {
-                // Đọc staff_id gốc từ user_metadata lúc migrate
-                const staffId = session.user.user_metadata?.staff_id;
+                // Đọc email từ phiên đăng nhập hiện tại
+                const email = session.user.email;
                 
-                if (staffId) {
+                if (email) {
                     const { data, error } = await supabase
                         .from('staff_list')
                         .select('id, role, name, status')
-                        .eq('id', staffId)
+                        .eq('email', email)
                         .single();
 
                     if (error) {
                         console.error('Lỗi khi tải thông tin nhân viên:', error.message);
-                        alert(`Lỗi RLS: Bạn đã đăng nhập Auth thành công, nhưng Database từ chối quyền truy cập! Thông báo lỗi: ${error.message}\nHãy đăng nhập Supabase -> Table Editor -> staff_list -> Tắt RLS (Disable RLS).`);
+                        // Chỉ throw alert nếu không phải lỗi không tìm thấy user (tránh spam)
+                        if (error.code !== 'PGRST116') {
+                             alert(`Lỗi RLS: Bạn đã đăng nhập Auth thành công, nhưng Database từ chối quyền truy cập! Thông báo lỗi: ${error.message}\nHãy đăng nhập Supabase -> Table Editor -> staff_list -> Tắt RLS (Disable RLS).`);
+                        }
                     }
 
                     if (data && data.status !== 'inactive' && mounted) {
