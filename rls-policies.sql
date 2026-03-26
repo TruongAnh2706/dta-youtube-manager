@@ -74,9 +74,9 @@ GRANT INSERT, UPDATE, DELETE ON managed_emails TO anon;
 GRANT INSERT, UPDATE, DELETE ON assets TO anon;
 GRANT INSERT, UPDATE, DELETE ON competitors TO anon;
 
--- staff_list: CHỈ service_role (server) được INSERT/UPDATE/DELETE
--- anon chỉ SELECT (để check session)
+-- staff_list: Cho phép anon CRUD (frontend gọi trực tiếp khi deploy GitHub Pages)
 GRANT ALL ON staff_list TO service_role;
+GRANT INSERT, UPDATE, DELETE ON staff_list TO anon;
 
 -- ============================
 -- BƯỚC 3: TẠO RLS POLICIES
@@ -86,8 +86,10 @@ GRANT ALL ON staff_list TO service_role;
 -- Ai cũng được đọc (cần cho sidebar hiển thị tên nhân sự, dropdown gán staff)
 -- NHƯNG không bao gồm cột password (đã được ẩn bởi select cụ thể trong code)
 CREATE POLICY "staff_select_all" ON staff_list FOR SELECT USING (true);
--- Chỉ service_role (server) mới ghi được (qua auth endpoints)
--- Không tạo INSERT/UPDATE/DELETE policy cho anon → mặc định bị chặn
+-- Cho phép CRUD từ frontend (anon key) khi deploy GitHub Pages (static hosting)
+CREATE POLICY "staff_insert_all" ON staff_list FOR INSERT WITH CHECK (true);
+CREATE POLICY "staff_update_all" ON staff_list FOR UPDATE USING (true);
+CREATE POLICY "staff_delete_all" ON staff_list FOR DELETE USING (true);
 
 -- == system_settings ==
 -- CHỈ service_role truy cập (chứa API keys nhạy cảm)
