@@ -152,7 +152,9 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
             email: finalEmail,
             password: passwordToUse,
             options: {
-                data: { name: formData.name }  // Lưu tên vào user_metadata
+                data: { name: formData.name },  // Lưu tên vào user_metadata
+                // ÉP link xác nhận phải trỏ về chính xác thư mục của website hiện tại
+                emailRedirectTo: window.location.origin + import.meta.env.BASE_URL
             }
         });
         
