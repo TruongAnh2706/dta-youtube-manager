@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useLocalStorage } from './hooks/useLocalStorage';
 import { supabase, toCamelCase } from './lib/supabase';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useAppData } from './hooks/useAppData';
