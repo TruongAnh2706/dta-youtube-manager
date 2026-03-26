@@ -34,7 +34,23 @@ export function Login({ onLogin }: LoginProps) {
       });
 
       if (authError) {
-        setError(authError.message === 'Invalid login credentials' ? 'Tài khoản hoặc mật khẩu không chính xác.' : authError.message);
+        let viMessage = 'Đã xảy ra lỗi hệ thống.';
+        
+        switch (authError.message) {
+          case 'Invalid login credentials':
+            viMessage = 'Tài khoản hoặc mật khẩu không chính xác.';
+            break;
+          case 'Email not confirmed':
+            viMessage = 'Tài khoản chưa được xác minh. Vui lòng kiểm tra email và bấm vào link xác nhận.';
+            break;
+          case 'User not found':
+            viMessage = 'Tài khoản không tồn tại trong hệ thống.';
+            break;
+          default:
+            viMessage = `Lỗi xác thực: ${authError.message}`;
+        }
+        
+        setError(viMessage);
       } else {
         // Đăng nhập thành công, AuthContext sẽ tự động bắt sự kiện onAuthStateChange
         // Không nhận gọi thêm hook nào ở đây
