@@ -501,10 +501,18 @@ app.post('/api/ai/generate', async (req, res) => {
 // GOOGLE TRENDS (giữ nguyên)
 // ========================================
 
+// Simple in-memory cache object to prevent rate limits
+const trendsCache = {};
+const CACHE_DURATION = 1000 * 60 * 60; // 1 hr
+
 app.get('/api/trends', async (req, res) => {
     const keyword = req.query.keyword;
     if (!keyword) {
         return res.status(400).json({ error: 'Keyword is required' });
+    }
+
+    if (trendsCache[keyword] && (Date.now() - trendsCache[keyword].timestamp < CACHE_DURATION)) {
+        return res.json(trendsCache[keyword].data);
     }
 
     try {
@@ -551,6 +559,7 @@ app.get('/api/trends', async (req, res) => {
             });
         }
 
+        trendsCache[keyword] = { timestamp: Date.now(), data: formattedData };
         res.json(formattedData);
     } catch (error) {
         console.error('Google Trends Error:', error);

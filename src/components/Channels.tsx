@@ -874,9 +874,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   };
 
   const filteredChannels = channels.filter(c => {
-    const matchesSearch = (c.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
-      (c.channelCode || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
-      (c.notes || '').toLowerCase().includes((searchTerm || '').toLowerCase());
+    const st = (searchTerm || '').toLowerCase();
+    const matchesSearch = 
+      (c.name || '').toLowerCase().includes(st) ||
+      (c.channelCode || '').toLowerCase().includes(st) ||
+      (c.email || '').toLowerCase().includes(st) ||
+      (c.notes || '').toLowerCase().includes(st);
     const matchesTopic = filterTopic === 'all' || (c.topicIds || []).includes(filterTopic);
     
     let matchesNiche = true;
