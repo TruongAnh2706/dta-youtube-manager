@@ -130,18 +130,38 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
         setStaffList(staffList.map(s => s.id === editingStaff.id ? { ...s, ...stateUpdate } : s));
         showToast('Đã cập nhật thông tin nhân sự thành công!', 'success');
       } else {
-        // TẠO MỚI nhân sự trực tiếp qua Supabase
+        // TẠO MỚI nhân sự: Tạo Auth Account + Insert vào staff_list
         const newStaffId = Date.now().toString();
         
         if (!formData.email || formData.email.trim() === '') {
             throw new Error('Bạn bắt buộc phải nhập Email cho nhân sự');
         }
         const finalEmail = formData.email.trim();
-
-        // Tạo username tự động từ email (phần trước @) để tránh vi phạm unique constraint
-        const autoUsername = finalEmail.split('@')[0].toLowerCase();
         
-        // Chuyển sang snake_case và chuẩn bị payload cho DB
+        // Mật khẩu: dùng giá trị nhập vào hoặc mặc định Dta@2026
+        const passwordToUse = formData.password && formData.password.trim() !== '' 
+            ? formData.password.trim() 
+            : 'Dta@2026';
+        
+        if (passwordToUse.length < 6) {
+            throw new Error('Mật khẩu phải có ít nhất 6 ký tự.');
+        }
+
+        // Bước 1: Tạo tài khoản Auth (signUp từ frontend)
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+            email: finalEmail,
+            password: passwordToUse,
+            options: {
+                data: { name: formData.name }  // Lưu tên vào user_metadata
+            }
+        });
+        
+        if (authError) {
+            throw new Error(`Lỗi tạo Auth: ${authError.message}`);
+        }
+
+        // Bước 2: Insert vào bảng staff_list
+        const autoUsername = finalEmail.split('@')[0].toLowerCase();
         const dbPayload = toSnakeCase({
             id: newStaffId,
             ...formData,
@@ -161,7 +181,14 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
         }
 
         setStaffList([...staffList, toCamelCase(data)]);
-        showToast('Đã thêm nhân sự mới thành công!', 'success');
+        
+        // Thông báo kết quả
+        const isConfirmRequired = authData.user && !authData.session;
+        if (isConfirmRequired) {
+            showToast(`Đã thêm nhân sự! Email xác nhận đã gửi tới ${finalEmail}. Nhân sự cần xác nhận email trước khi đăng nhập.`, 'success', 8000);
+        } else {
+            showToast('Đã thêm nhân sự mới thành công!', 'success');
+        }
       }
       handleCloseModal();
     } catch (err: any) {
