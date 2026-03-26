@@ -47,7 +47,7 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
     'calendar_view_all', 'copyright_view', 'assets_view', 'tasks_view', 'tasks_edit', 'tasks_claim'
   ],
   member: [
-    'dashboard_view', 'channels_view', 'channels_edit', 'emails_view', 'calendar_view', 'calendar_edit', 'assets_view', 'tasks_view', 'tasks_claim'
+    'dashboard_view', 'channels_view', 'channels_edit', 'emails_view', 'sources_view', 'calendar_view', 'calendar_edit', 'assets_view', 'tasks_view', 'tasks_claim'
   ]
 };
 
