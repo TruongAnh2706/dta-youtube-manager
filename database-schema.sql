@@ -290,6 +290,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
   active_youtube_key_index INTEGER DEFAULT 0,
   audit_logs JSONB DEFAULT '[]'::jsonb,
   training_docs JSONB DEFAULT '[]'::jsonb,
+  role_permissions JSONB,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

@@ -54,31 +54,7 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
 
 function AppContent() {
   const { currentUser, setCurrentUser, isLoading, logout } = useAuth();
-  // P1.1: Permissions từ systemSettings (DB), fallback dùng DEFAULT
-  // Vẫn giữ localStorage để PermissionSettings UI có thể lưu/đọc
-  const [rolePermissions, setRolePermissions] = useLocalStorage<RolePermissions>('yt-role-permissions', DEFAULT_PERMISSIONS);
-
-  // Migration: Ensure new permissions are added to existing rolePermissions
-  React.useEffect(() => {
-    let updated = false;
-    const newPermissions = { ...rolePermissions };
-
-    (Object.keys(DEFAULT_PERMISSIONS) as StaffRole[]).forEach(role => {
-      const defaultRolePerms = DEFAULT_PERMISSIONS[role];
-      const currentRolePerms = newPermissions[role] || [];
-
-      const missingPerms = defaultRolePerms.filter(p => !currentRolePerms.includes(p));
-      if (missingPerms.length > 0) {
-        newPermissions[role] = [...currentRolePerms, ...missingPerms];
-        updated = true;
-      }
-    });
-
-    if (updated) {
-      setRolePermissions(newPermissions);
-    }
-  }, []);
-
+  
   const {
     channels, setChannels, topics, setTopics, staffList, setStaffList,
     sourceChannels, setSourceChannels, tasks, setTasks,
@@ -92,6 +68,29 @@ function AppContent() {
     activeYoutubeKey, activeGeminiKey, rotateYoutubeKey,
     handleRemoteUpdate, appData
   } = useAppData(currentUser);
+
+  // Lấy phân quyền từ DB, merge với DEFAULT để tự động thêm các chức năng mới
+  const rolePermissions = React.useMemo(() => {
+    const fromDb = systemSettings?.rolePermissions;
+    const combined = { ...DEFAULT_PERMISSIONS };
+    if (fromDb) {
+      (Object.keys(DEFAULT_PERMISSIONS) as StaffRole[]).forEach(role => {
+        const defaultPerms = DEFAULT_PERMISSIONS[role];
+        const dbPerms = fromDb[role] || [];
+        const missingPerms = defaultPerms.filter(p => !dbPerms.includes(p));
+        combined[role] = [...dbPerms, ...missingPerms];
+      });
+    }
+    return combined;
+  }, [systemSettings]);
+
+  // Hàm setter cho UI cập nhật state cục bộ trước khi bấm LƯU
+  const setRolePermissions = (newPermsFn: any) => {
+    const newPerms = typeof newPermsFn === 'function' ? newPermsFn(rolePermissions) : newPermsFn;
+    setSystemSettings(prev => ({ ...prev, rolePermissions: newPerms }));
+  };
+
+
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);

@@ -3,12 +3,15 @@ import { StaffRole, PermissionKey, RolePermissions } from '../types';
 import { Shield, Check, X, Info, Save, RotateCcw } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
 
+import { supabase } from '../lib/supabase';
+
 interface PermissionSettingsProps {
   rolePermissions: RolePermissions;
   setRolePermissions: React.Dispatch<React.SetStateAction<RolePermissions>>;
 }
 
 const PERMISSION_GROUPS: { group: string; permissions: { key: PermissionKey; label: string; description: string }[] }[] = [
+
   {
     group: 'Tổng quan & Dashboard',
     permissions: [
@@ -130,9 +133,19 @@ export function PermissionSettings({ rolePermissions, setRolePermissions }: Perm
     });
   };
 
-  const handleSave = () => {
-    // In a real app, this would be an API call
-    showToast('Đã lưu thay đổi phân quyền thành công!', 'success');
+  const handleSave = async () => {
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .update({ role_permissions: rolePermissions })
+        .eq('id', 'SYSTEM_DEFAULT_ID');
+      
+      if (error) throw error;
+      showToast('Đã lưu phân quyền lên hệ thống thành công!', 'success');
+    } catch (err: any) {
+      console.error('Lỗi khi lưu phân quyền:', err);
+      showToast('Lỗi lưu phân quyền: ' + err.message, 'error');
+    }
   };
 
   const resetToDefault = () => {

@@ -347,6 +347,7 @@ export type SystemSettings = {
   trainingDocs: TrainingDoc[];
   emailStatuses?: CustomStatus[];
   taskStatuses?: CustomStatus[];
+  rolePermissions?: RolePermissions;
 };
 
 
