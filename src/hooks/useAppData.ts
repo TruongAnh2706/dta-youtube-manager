@@ -158,9 +158,7 @@ export function useAppData(currentUser: any) {
                 const isAdmin = currentUser?.role === 'admin';
                 
                 const baseQueries = [
-                    isAdmin 
-                        ? supabase.from('system_settings').select('*')
-                        : Promise.resolve({ data: null }),  // P1.2: Non-admin không load API keys
+                    supabase.from('system_settings').select('*'), // Tất cả role đều cần load (API keys, rolePermissions, taskStatuses...)
                     supabase.from('staff_list').select('id, name, role, skills, email, phone, username, assigned_channel_ids, status, base_salary, managed_email_count, kpi_targets'),
                     supabase.from('channels').select('*'),
                     supabase.from('topics').select('*'),

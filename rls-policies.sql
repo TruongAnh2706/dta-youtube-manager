@@ -53,9 +53,10 @@ GRANT SELECT ON managed_emails TO anon;
 GRANT SELECT ON assets TO anon;
 GRANT SELECT ON competitors TO anon;
 
--- system_settings: CHỈ service_role được truy cập (server-side)
--- KHÔNG grant cho anon
+-- system_settings: service_role có full quyền, anon chỉ được ĐỌC (cần cho rolePermissions, API keys, taskStatuses)
+-- INSERT/UPDATE/DELETE chỉ admin thao tác qua AutoSaveService
 GRANT ALL ON system_settings TO service_role;
+GRANT SELECT ON system_settings TO anon;
 
 -- Cho anon INSERT/UPDATE/DELETE trên các bảng cần thiết cho AutoSave
 -- (Sẽ được bảo vệ bởi RLS policies phía dưới)
