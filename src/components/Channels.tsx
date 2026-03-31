@@ -1572,12 +1572,27 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                             key={sc.id}
                             type="button"
                             onClick={() => {
-                              setFormData(prev => ({
-                                ...prev,
-                                linkedSourceChannelIds: isLinked
+                              setFormData(prev => {
+                                const newLinked = isLinked
                                   ? (prev.linkedSourceChannelIds || []).filter(id => id !== sc.id)
-                                  : [...(prev.linkedSourceChannelIds || []), sc.id]
-                              }));
+                                  : [...(prev.linkedSourceChannelIds || []), sc.id];
+
+                                // Khi chọn kênh nguồn, tự động merge chủ đề (topics) của nguồn vào kênh đang sửa
+                                const newTopicIds = [...(prev.topicIds || [])];
+                                if (!isLinked && sc.topicIds && sc.topicIds.length > 0) {
+                                  sc.topicIds.forEach(tid => {
+                                    if (!newTopicIds.includes(tid)) {
+                                      newTopicIds.push(tid);
+                                    }
+                                  });
+                                }
+
+                                return {
+                                  ...prev,
+                                  linkedSourceChannelIds: newLinked,
+                                  topicIds: newTopicIds
+                                };
+                              });
                             }}
                             className={`w-full flex items-center p-2 rounded-lg border transition-all text-left ${
                               isLinked
