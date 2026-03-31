@@ -1133,9 +1133,27 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                               <span className="text-[8px] text-gray-400 italic">
                                 {analyzingChannelId === channel.id ? 'Đang phân tích...' : 'Chưa gắn tag'}
                               </span>
+                              )}
+                            </div>
+
+                            {/* Hiển thị Kênh nguồn liên kết */}
+                            {(channel.linkedSourceChannelIds || []).length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1 items-center">
+                                <Link2 size={10} className="text-emerald-500 shrink-0" />
+                                <span className="text-[9px] text-gray-500 mr-0.5">Nguồn:</span>
+                                {(channel.linkedSourceChannelIds || []).map(scId => {
+                                  const sc = sourceChannels.find(s => s.id === scId);
+                                  if (!sc) return null;
+                                  return (
+                                    <a key={sc.id} href={sc.url} target="_blank" rel="noopener noreferrer" className="text-[9px] font-medium bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 truncate max-w-[150px] transition-colors flex items-center" title={sc.name}>
+                                      {sc.name}
+                                    </a>
+                                  );
+                                })}
+                              </div>
                             )}
-                          </div>
-                          <div className="flex items-center mt-1 space-x-2">
+
+                            <div className="flex items-center mt-1 space-x-2">
                             <span className="text-xs text-gray-500">{channel.subscribers >= 1000 ? (channel.subscribers / 1000).toFixed(1) + 'k' : channel.subscribers} sub</span>
                             {channel.totalViews ? <span className="text-xs text-gray-400">• {(channel.totalViews / 1000000).toFixed(1)}M views</span> : null}
                             <a href={channel.url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline flex items-center"><ExternalLink size={12} className="ml-1" /></a>

@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import { fetchYoutubeChannelInfo, sleep } from '../services/youtube';
 import { analyzeChannelTopic } from '../services/aiService';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, Link2 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 
@@ -1165,6 +1165,19 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                           Xem kỹ <Eye size={10} className="ml-0.5" />
                         </button>
                       </div>
+
+                      {/* Hiển thị Kênh Đích liên kết (từ Channels) */}
+                      {channels.filter(c => (c.linkedSourceChannelIds || []).includes(channel.id)).length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5 items-center">
+                          <Link2 size={10} className="text-blue-500 shrink-0" />
+                          <span className="text-[9px] text-gray-500 mr-0.5">Kênh đích:</span>
+                          {channels.filter(c => (c.linkedSourceChannelIds || []).includes(channel.id)).map(linkedC => (
+                            <a key={linkedC.id} href={linkedC.url} target="_blank" rel="noopener noreferrer" className="text-[9px] font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 px-1.5 py-0.5 rounded border border-blue-200 truncate max-w-[120px] transition-colors flex items-center" title={linkedC.name}>
+                              {linkedC.name}
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </td>
