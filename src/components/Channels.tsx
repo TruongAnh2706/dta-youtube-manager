@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Channel, Topic, Proxy, SourceChannel, VideoTask, Staff, FinancialRecord, Strike, ManagedEmail } from '../types';
-import { Plus, Edit2, Trash2, X, ExternalLink, Search, Eye, EyeOff, ShieldAlert, RefreshCw, Upload, FileDown, AlertCircle, Sparkles, Copy, Check, Download, Clock, Calendar, User, DollarSign, BarChart2, Users, KanbanSquare, ShieldCheck, Mail, Link2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ExternalLink, Search, Eye, EyeOff, ShieldAlert, RefreshCw, Upload, FileDown, AlertCircle, Sparkles, Copy, Check, Download, Clock, Calendar, User, DollarSign, BarChart2, Users, KanbanSquare, ShieldCheck, Mail, Link2, CheckCircle2, PlayCircle } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
@@ -1045,7 +1045,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                   />
                 </th>
                 <th className="p-4 font-medium">Kênh</th>
-                <th className="p-4 font-medium">Bảo mật (Email/Pass)</th>
+                <th className="p-4 font-medium min-w-[200px]">Nguồn liên kết</th>
                 <th className="p-4 font-medium">Proxy/VPS</th>
                 <th className="p-4 font-medium">Trạng thái</th>
                 <th className="p-4 font-medium text-right">Thao tác</th>
@@ -1136,23 +1136,6 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                               )}
                             </div>
 
-                            {/* Hiển thị Kênh nguồn liên kết */}
-                            {(channel.linkedSourceChannelIds || []).length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1 items-center">
-                                <Link2 size={10} className="text-emerald-500 shrink-0" />
-                                <span className="text-[9px] text-gray-500 mr-0.5">Nguồn:</span>
-                                {(channel.linkedSourceChannelIds || []).map(scId => {
-                                  const sc = sourceChannels.find(s => s.id === scId);
-                                  if (!sc) return null;
-                                  return (
-                                    <a key={sc.id} href={sc.url} target="_blank" rel="noopener noreferrer" className="text-[9px] font-medium bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 truncate max-w-[150px] transition-colors flex items-center" title={sc.name}>
-                                      {sc.name}
-                                    </a>
-                                  );
-                                })}
-                              </div>
-                            )}
-
                             <div className="flex items-center mt-1 space-x-2">
                             <span className="text-xs text-gray-500">{channel.subscribers >= 1000 ? (channel.subscribers / 1000).toFixed(1) + 'k' : channel.subscribers} sub</span>
                             {channel.totalViews ? <span className="text-xs text-gray-400">• {(channel.totalViews / 1000000).toFixed(1)}M views</span> : null}
@@ -1162,33 +1145,34 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                       </div>
                     </td>
                     <td className="p-4">
-                      {privacyMode || !hasPermission('channels_view_sensitive') ? (
-                        <div className="flex items-center text-gray-400 text-sm italic">
-                          <ShieldAlert size={14} className="mr-1" />
-                          {!hasPermission('channels_view_sensitive') ? 'Không có quyền xem' : 'Đã ẩn (Privacy Mode)'}
+                      {(channel.linkedSourceChannelIds || []).length > 0 ? (
+                        <div className="flex flex-col gap-2">
+                          {(channel.linkedSourceChannelIds || []).map(scId => {
+                            const sc = sourceChannels.find(s => s.id === scId);
+                            if (!sc) return null;
+                            return (
+                              <div key={sc.id} className="flex items-center gap-3">
+                                {sc.avatarUrl ? (
+                                  <a href={sc.url || '#'} target="_blank" rel="noopener noreferrer" className="shrink-0 hover:opacity-80 transition-opacity" title="Mở Mạng lưới kênh">
+                                    <img src={sc.avatarUrl} className="w-8 h-8 rounded-full object-cover shadow-sm border border-emerald-200" referrerPolicy="no-referrer" />
+                                  </a>
+                                ) : (
+                                  <a href={sc.url || '#'} target="_blank" rel="noopener noreferrer" className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center shrink-0 border border-emerald-200 hover:bg-emerald-200 transition-colors" title="Mở Mạng lưới kênh">
+                                    <PlayCircle size={16} className="text-emerald-600" />
+                                  </a>
+                                )}
+                                <div className="flex flex-col min-w-0">
+                                  <a href={sc.url || '#'} target="_blank" rel="noopener noreferrer" className="font-bold text-sm text-gray-900 hover:text-emerald-600 transition-colors line-clamp-1 truncate max-w-[160px]" title={sc.name}>
+                                    {sc.name}
+                                  </a>
+                                  <span className="text-[10px] text-emerald-600 font-medium flex items-center mt-0.5"><CheckCircle2 size={10} className="mr-1" /> Kênh nguồn</span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : (
-                        <div className="flex flex-col space-y-1 text-sm">
-                          <div className="flex items-center space-x-2">
-                             <span className="text-gray-700 font-medium">{channel.email || 'Chưa có email'}</span>
-                             {managedEmails?.some(em => em.email === channel.email) && (
-                               <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded border border-blue-200" title="Đã liên kết kho Email">Linked</span>
-                             )}
-                          </div>
-                          <div className="flex items-center text-gray-500">
-                            <span className="font-mono mr-2">{showPasswords[channel.id] ? channel.password : '••••••••'}</span>
-                            {channel.password && (
-                              <button onClick={() => togglePasswordVisibility(channel.id)} className="text-gray-400 hover:text-gray-600">
-                                {showPasswords[channel.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                              </button>
-                            )}
-                          </div>
-                          {channel.twoFactorCode && (
-                            <div className="text-[10px] text-red-500 font-bold flex items-center mt-1">
-                              2FA: {showPasswords[channel.id] ? channel.twoFactorCode : '••••••••'}
-                            </div>
-                          )}
-                        </div>
+                        <span className="text-xs text-gray-400 italic">Chưa có nguồn cố định</span>
                       )}
                     </td>
                     <td className="p-4 text-sm text-gray-600">
