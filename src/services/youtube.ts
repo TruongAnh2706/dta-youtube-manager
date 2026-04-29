@@ -1,5 +1,23 @@
 export const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+export const normalizeYoutubeUrl = (url: string) => {
+    if (!url) return '';
+    try {
+        let clean = decodeURIComponent(url).trim().toLowerCase();
+        // Xóa protocol (http/https) và www.
+        clean = clean.replace(/^https?:\/\/(www\.)?/, '');
+        // Xóa các đuôi phổ biến của youtube (videos, shorts...)
+        clean = clean.replace(/\/(videos|shorts|streams|featured|about|playlists|community)(\/?)$/, '');
+        // Xóa tham số truy vấn (ví dụ ?view=0)
+        clean = clean.split('?')[0];
+        // Xóa dấu gạch chéo ở cuối cùng nếu có
+        clean = clean.replace(/\/$/, '');
+        return clean;
+    } catch (e) {
+        return url.toLowerCase().trim();
+    }
+};
+
 export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipTopVideos: boolean = false) {
   if (!apiKey) throw new Error("Thiếu YouTube API Key. Vui lòng cấu hình trong phần Cài đặt.");
   

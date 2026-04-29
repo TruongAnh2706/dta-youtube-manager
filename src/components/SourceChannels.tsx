@@ -4,7 +4,7 @@ import { Plus, Edit2, Trash2, X, ExternalLink, Star, RefreshCw, ChevronDown, Che
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
-import { fetchYoutubeChannelInfo, sleep } from '../services/youtube';
+import { fetchYoutubeChannelInfo, sleep, normalizeYoutubeUrl } from '../services/youtube';
 import { analyzeChannelTopic } from '../services/aiService';
 import { Copy, Check, Link2 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
@@ -383,6 +383,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     setIsScanningDead(true);
     setImportProgress({ current: 0, total: channelsToScan.length });
     let deadCount = 0;
+    const deadIds: string[] = [];
 
     for (let i = 0; i < channelsToScan.length; i++) {
        const target = channelsToScan[i];
@@ -394,7 +395,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
          await fetchYoutubeChannelInfo(target.url, youtubeApiKey, true);
        } catch (err: any) {
          if (err.message === "Không tìm thấy kênh. Vui lòng kiểm tra lại đường dẫn (URL) có chính xác không.") {
-            setSourceChannels(prev => prev.map(c => c.id === target.id ? { ...c, status: 'dead' } : c));
+            deadIds.push(target.id);
             deadCount++;
          } else if (err.message && (err.message.includes('quota') || err.message.includes('limit'))) {
              const rotated = rotateYoutubeKey();
@@ -403,6 +404,10 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
              break;
          }
        }
+    }
+
+    if (deadIds.length > 0) {
+        setSourceChannels(prev => prev.map(c => deadIds.includes(c.id) ? { ...c, status: 'dead' } : c));
     }
 
     setIsScanningDead(false);
@@ -477,11 +482,6 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             ...updatedChannels[channelIndex],
             topicIds: [...new Set([...existingIds, ...result.suggestedTopicIds])]
           };
-          // Update state incrementally for better feedback
-          setSourceChannels(prev => prev.map(c => {
-            const match = updatedChannels.find(uc => uc.id === c.id);
-            return match || c;
-          }));
         }
       } catch (err) {
         console.error(`Lỗi AI cho kênh ${target.name}:`, err);
@@ -551,7 +551,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         const data = XLSX.utils.sheet_to_json(ws) as any[];
 
         const validateUrl = (row: any) => {
-          return (row.URL || row.url || row['Link'] || '').toLowerCase();
+          return normalizeYoutubeUrl(row.URL || row.url || row['Link'] || '');
         };
 
         const isValidRow = (row: any) => {
@@ -567,7 +567,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           const urlStr = validateUrl(row);
           
           // Check duplicates against current channels
-          const isDupUrl = urlStr ? sourceChannels.some(sc => (sc.url || '').toLowerCase() === urlStr) || channels.some(c => (c.url || '').toLowerCase() === urlStr) : false;
+          const isDupUrl = urlStr ? sourceChannels.some(sc => normalizeYoutubeUrl(sc.url || '') === urlStr) || channels.some(c => normalizeYoutubeUrl(c.url || '') === urlStr) : false;
 
           // Check duplicates within the file itself
           const isDupInFile = newChannelsToImport.some(c => validateUrl(c) === urlStr);
@@ -599,11 +599,13 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         let currentApiKey = youtubeApiKey || '';
 
         let createdTopicsMap = new Map<string, string>(); // name -> id
+        const accumulatedTopics: Topic[] = [];
+        const accumulatedChannels: SourceChannel[] = [];
 
         for (let i = 0; i < newChannelsToImport.length; i++) {
           setImportProgress({ current: i + 1, total: newChannelsToImport.length });
           const row = newChannelsToImport[i];
-          const url = row.URL || row.url || row['Link'] || '';
+          const url = (row.URL || row.url || row['Link'] || '').trim();
 
           let name = row['Tên kênh'] || row.name || row.Name || 'Kênh mới';
           let avatarUrl = '';
@@ -628,14 +630,14 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                  createdTopicsMap.set(tName.toLowerCase(), newTopicId);
                  topicIds.push(newTopicId);
                  
-                 setTopics(prev => [...prev, {
+                 accumulatedTopics.push({
                     id: newTopicId,
                     name: tName,
                     description: 'Tạo tự động từ file Excel (Kênh Nguồn)',
                     color: '#' + Math.floor(Math.random()*16777215).toString(16),
                     tags: [], hashtags: [], country: 'Vietnam',
                     niche: 'Khác'
-                 }]);
+                 });
                }
             });
           }
@@ -702,11 +704,18 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             notes
           };
 
-          setSourceChannels(prev => [...prev, newChannel]);
+          accumulatedChannels.push(newChannel);
           successCount++;
         }
 
-        showToast(`Nhập hoàn tất: Tổng ${newChannelsToImport.length} kênh mới, lỗi ${errorCount}.${duplicateCount > 0 ? ` (Bỏ qua ${duplicateCount} kênh trùng lặp)` : ''}${createdTopicsMap.size > 0 ? ` Đã tạo tự động ${createdTopicsMap.size} chủ đề.` : ''}`, successCount > 0 ? 'success' : 'error');
+        if (accumulatedTopics.length > 0) {
+            setTopics(prev => [...prev, ...accumulatedTopics]);
+        }
+        if (accumulatedChannels.length > 0) {
+            setSourceChannels(prev => [...prev, ...accumulatedChannels]);
+        }
+
+        showToast(`Nhập hoàn tất: Tổng ${accumulatedChannels.length} kênh mới, lỗi ${errorCount}.${duplicateCount > 0 ? ` (Bỏ qua ${duplicateCount} kênh trùng lặp)` : ''}${createdTopicsMap.size > 0 ? ` Đã tạo tự động ${createdTopicsMap.size} chủ đề.` : ''}`, successCount > 0 ? 'success' : 'error');
       } catch (err) {
         showToast('Lỗi khi đọc file Excel. Vui lòng kiểm tra lại định dạng.', 'error');
       } finally {
@@ -810,11 +819,11 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     e.preventDefault();
 
     // Check for duplicates (URL)
-    const checkUrl = formData.url?.toLowerCase().trim() || '';
+    const checkUrl = normalizeYoutubeUrl(formData.url || '');
     
     const isDupUrl = checkUrl !== '' && (
-      (editingChannel ? sourceChannels.some(sc => (sc.url || '').toLowerCase() === checkUrl && sc.id !== editingChannel.id) : sourceChannels.some(sc => (sc.url || '').toLowerCase() === checkUrl)) ||
-      channels.some(c => (c.url || '').toLowerCase() === checkUrl)
+      (editingChannel ? sourceChannels.some(sc => normalizeYoutubeUrl(sc.url || '') === checkUrl && sc.id !== editingChannel.id) : sourceChannels.some(sc => normalizeYoutubeUrl(sc.url || '') === checkUrl)) ||
+      channels.some(c => normalizeYoutubeUrl(c.url || '') === checkUrl)
     );
 
     if (isDupUrl) {
