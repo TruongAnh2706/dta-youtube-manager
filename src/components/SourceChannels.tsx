@@ -652,8 +652,21 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             // Add a small delay to avoid hitting rate limits
             if (i > 0) await sleep(1000);
 
-            // Skip top videos during bulk import to save quota
             const info = await fetchYoutubeChannelInfo(url, currentApiKey, true);
+            
+            // --- BỘ LỌC TRÙNG LẶP LẦN 2 (Deep Filter) ---
+            // Lọc trùng sau khi đã có thông tin thực tế từ YouTube. 
+            // Điều này giải quyết vấn đề: 2 link khác nhau (vd 1 link ID, 1 link Handle) nhưng trỏ về cùng 1 kênh.
+            const isDupInfo = sourceChannels.some(sc => sc.name === info.name && sc.subscribers === info.subscribers) ||
+                              channels.some(c => c.name === info.name && c.subscribers === info.subscribers) ||
+                              accumulatedChannels.some(sc => sc.name === info.name && sc.subscribers === info.subscribers);
+                              
+            if (isDupInfo) {
+                console.log(`[Deep Filter] Bỏ qua kênh ${info.name} vì đã tồn tại trong hệ thống.`);
+                duplicateCount++;
+                continue;
+            }
+
             name = info.name || name;
             avatarUrl = info.avatarUrl || avatarUrl;
             subscribers = info.subscribers || subscribers;

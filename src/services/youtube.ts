@@ -137,6 +137,7 @@ export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipT
     }
 
     return {
+      channelId: channelId,
       name: channel.snippet.title,
       avatarUrl: channel.snippet.thumbnails?.default?.url || '',
       subscribers: subCount,
