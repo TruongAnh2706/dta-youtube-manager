@@ -186,26 +186,37 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
 
                     const tableName = payload.table;
 
-                    // Khi nhận sự kiện, ta fetch lại cả bảng đó cho an toàn thay vì ghép data cục bộ
-                    try {
-                        const { data, error } = await supabase.from(tableName).select('*');
-                        if (data && !error) {
-                            const camelData = toCamelCase(data);
-
-                            // CHỐNG INFINITE LOOP: Cập nhật prevDataRef để nó không tưởng user vừa sửa data state
-                            const mappedKey = tablesMap.find(t => t.table === tableName)?.key;
-                            if (mappedKey && prevDataRef.current) {
-                                prevDataRef.current[mappedKey] = JSON.parse(JSON.stringify(camelData));
-                            } else if (tableName === 'system_settings' && prevDataRef.current) {
-                                if (camelData.length > 0) prevDataRef.current.systemSettings = JSON.parse(JSON.stringify(camelData[0]));
-                            }
-
-                            // Gửi tín hiệu báo cho App.tsx cập nhật state
-                            onRemoteUpdate(tableName, camelData);
-                        }
-                    } catch (err) {
-                        console.error(`Lỗi cập nhật bảng ${tableName} sau khi nhận Data Realtime`, err);
+                    // Nếu là system_settings thì fetch full vì nó phức tạp
+                    if (tableName === 'system_settings') {
+                         const { data, error } = await supabase.from(tableName).select('*');
+                         if (data && !error) {
+                             const camelData = toCamelCase(data);
+                             if (prevDataRef.current) prevDataRef.current.systemSettings = JSON.parse(JSON.stringify(camelData[0]));
+                             onRemoteUpdate(tableName, camelData);
+                         }
+                         return;
                     }
+
+                    // Delta Update (Chống đè dữ liệu)
+                    // Cập nhật prevDataRef cục bộ để AutoSave không gửi ngược lại DB
+                    const mappedKey = tablesMap.find(t => t.table === tableName)?.key;
+                    if (mappedKey && prevDataRef.current && prevDataRef.current[mappedKey]) {
+                        const eventType = payload.eventType;
+                        const newRow = payload.new ? toCamelCase(payload.new) : null;
+                        const oldRow = payload.old;
+                        
+                        let prevArray = prevDataRef.current[mappedKey];
+                        if (eventType === 'INSERT' && newRow) {
+                            if (!prevArray.some((i: any) => i.id === newRow.id)) prevArray.push(newRow);
+                        } else if (eventType === 'UPDATE' && newRow) {
+                            prevDataRef.current[mappedKey] = prevArray.map((i: any) => i.id === newRow.id ? newRow : i);
+                        } else if (eventType === 'DELETE' && oldRow) {
+                            prevDataRef.current[mappedKey] = prevArray.filter((i: any) => i.id !== oldRow.id);
+                        }
+                    }
+
+                    // Truyền thẳng payload qua cho AppData xử lý cục bộ
+                    onRemoteUpdate(tableName, payload);
                 }
             )
             .subscribe();

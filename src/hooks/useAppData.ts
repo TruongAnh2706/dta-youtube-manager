@@ -106,44 +106,74 @@ export function useAppData(currentUser: any) {
         return activeKeys.length > 1;
     }, [systemSettings, setSystemSettings]);
 
-    const handleRemoteUpdate = (tableName: string, updatedData: any) => {
-        switch (tableName) {
-            case 'channels': setChannels(updatedData); break;
-            case 'topics': setTopics(updatedData); break;
-            case 'staff_list': setStaffList(updatedData); break;
-            case 'source_channels': setSourceChannels(updatedData); break;
-            case 'video_tasks': setTasks(updatedData); break;
-            case 'financials': setFinancials(updatedData); break;
-            case 'transactions': setTransactions(updatedData); break;
-            case 'financial_accounts': setAccounts(updatedData); break;
-            case 'transaction_categories': setCategories(updatedData); break;
-            case 'strikes': setStrikes(updatedData); break;
-            case 'assets': setAssets(updatedData); break;
-            case 'proxies': setProxies(updatedData); break;
-            case 'licenses': setLicenses(updatedData); break;
-            case 'competitors': setCompetitors(updatedData); break;
-            case 'managed_emails': setManagedEmails(updatedData); break;
-            case 'system_settings':
-                if (updatedData.length > 0) {
-                    const parsed = updatedData[0];
-                    if (!parsed.emailStatuses) parsed.emailStatuses = [
-                        { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
-                        { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
-                        { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
-                        { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
-                        { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
-                    ];
-                    if (!parsed.taskStatuses) parsed.taskStatuses = [
-                        { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
-                        { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
-                        { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
-                        { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
-                        { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
-                    ];
-                    setSystemSettings(parsed);
-                }
-                break;
+    const handleRemoteUpdate = (tableName: string, payload: any) => {
+        const setMap: any = {
+            'channels': setChannels,
+            'topics': setTopics,
+            'staff_list': setStaffList,
+            'source_channels': setSourceChannels,
+            'video_tasks': setTasks,
+            'financials': setFinancials,
+            'transactions': setTransactions,
+            'financial_accounts': setAccounts,
+            'transaction_categories': setCategories,
+            'strikes': setStrikes,
+            'assets': setAssets,
+            'proxies': setProxies,
+            'licenses': setLicenses,
+            'competitors': setCompetitors,
+            'managed_emails': setManagedEmails
+        };
+
+        if (tableName === 'system_settings') {
+            if (payload && payload.length > 0) {
+                const parsed = payload[0];
+                if (!parsed.emailStatuses) parsed.emailStatuses = [
+                    { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
+                    { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
+                    { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
+                    { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
+                    { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
+                ];
+                if (!parsed.taskStatuses) parsed.taskStatuses = [
+                    { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
+                    { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
+                    { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
+                    { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
+                    { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
+                ];
+                setSystemSettings(parsed);
+            }
+            return;
         }
+
+        const setter = setMap[tableName];
+        if (!setter) return;
+
+        // Fallback: nếu payload là mảng (full fetch)
+        if (Array.isArray(payload)) {
+            setter(payload);
+            return;
+        }
+
+        // Delta update
+        const { eventType, new: newRow, old: oldRow } = payload;
+        
+        setter((prev: any[]) => {
+            if (eventType === 'INSERT') {
+                const newItem = toCamelCase(newRow);
+                if (prev.some(item => item.id === newItem.id)) return prev;
+                return [...prev, newItem];
+            }
+            if (eventType === 'UPDATE') {
+                const updatedItem = toCamelCase(newRow);
+                return prev.map(item => item.id === updatedItem.id ? updatedItem : item);
+            }
+            if (eventType === 'DELETE') {
+                return prev.filter(item => item.id !== oldRow.id);
+            }
+            return prev;
+        });
     };
 
     useEffect(() => {

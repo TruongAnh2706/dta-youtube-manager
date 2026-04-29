@@ -75,14 +75,19 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [bulkActionStaffId, setBulkActionStaffId] = useState<string>('');
 
   const handleBulkDelete = async () => {
-    if (confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.length} kênh đã chọn?`)) {
+    if (confirm(`Bạn có chắc chắn muốn xóa ${selectedIds.length} kênh đã chọn cùng TOÀN BỘ dữ liệu liên quan (Công việc, Tài chính, Gậy)?`)) {
       setChannels(prev => prev.filter(c => !selectedIds.includes(c.id)));
       
+      // Xóa liên đới (Cascade Delete)
+      supabase.from('video_tasks').delete().in('channel_id', selectedIds).then();
+      supabase.from('financials').delete().in('channel_id', selectedIds).then();
+      supabase.from('strikes').delete().in('channel_id', selectedIds).then();
+
       const { error } = await supabase.from('channels').delete().in('id', selectedIds);
       if (error) {
         showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
       } else {
-        showToast(`Đã xóa ${selectedIds.length} kênh.`, 'info');
+        showToast(`Đã xóa ${selectedIds.length} kênh và toàn bộ dữ liệu liên quan.`, 'info');
       }
       setSelectedIds([]);
     }
@@ -808,7 +813,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Bạn có chắc chắn muốn xóa kênh này?')) {
+    if (confirm('Bạn có chắc chắn muốn xóa kênh này cùng TOÀN BỘ dữ liệu liên quan (Công việc, Tài chính, Gậy)?')) {
       const channelToDelete = channels.find(c => c.id === id);
       setChannels(prev => prev.filter(c => c.id !== id));
       
@@ -820,11 +825,16 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           }
       }
 
+      // Xóa liên đới (Cascade Delete)
+      supabase.from('video_tasks').delete().eq('channel_id', id).then();
+      supabase.from('financials').delete().eq('channel_id', id).then();
+      supabase.from('strikes').delete().eq('channel_id', id).then();
+
       const { error } = await supabase.from('channels').delete().eq('id', id);
       if (error) {
         showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
       } else {
-        showToast('Đã xóa kênh.', 'info');
+        showToast('Đã xóa kênh và toàn bộ dữ liệu liên quan.', 'info');
       }
     }
   };
