@@ -92,7 +92,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
       
       if (isNewlyAssigned) {
         const newTask: VideoTask = {
-          id: `task_${Date.now()}`,
+          id: crypto.randomUUID(),
           title: `[Khởi tạo kênh] Email: ${formData.email}`,
           channelId: editingEmail.id,
           status: 'pending',
@@ -117,14 +117,14 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
       const newEmail: ManagedEmail = {
         ...formData,
         assignedTo: formData.assignedTo || null,
-        id: `email_${Date.now()}`,
+        id: crypto.randomUUID(),
         createdAt: new Date().toISOString()
       };
       setEmails(prev => [newEmail, ...prev]);
 
       if (formData.assignedTo) {
         const newTask: VideoTask = {
-          id: `task_${Date.now()}`,
+          id: crypto.randomUUID(),
           title: `[Khởi tạo kênh] Email: ${formData.email}`,
           channelId: newEmail.id,
           status: 'pending',

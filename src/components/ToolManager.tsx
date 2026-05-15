@@ -42,7 +42,7 @@ export function ToolManager({ licenses, setLicenses, privacyMode, topics, gemini
     if (editingLicense) {
       setLicenses(licenses.map(l => l.id === editingLicense.id ? { ...l, ...formData } : l));
     } else {
-      setLicenses([...licenses, { id: Date.now().toString(), ...formData }]);
+      setLicenses([...licenses, { id: crypto.randomUUID(), ...formData }]);
     }
     setIsModalOpen(false);
   };

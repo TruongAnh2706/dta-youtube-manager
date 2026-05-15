@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Strike, StrikeType, StrikeStatus, Channel } from '../types';
-import { Plus, Edit2, Trash2, X, ShieldAlert, AlertTriangle, CheckCircle, History, BarChart2, BrainCircuit, RefreshCw, Activity } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, ShieldAlert, AlertTriangle, CheckCircle, History, BarChart2, BrainCircuit, RefreshCw, Activity, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
 import { usePermissions } from '../hooks/usePermissions';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
+import * as XLSX from 'xlsx';
 
 interface CopyrightManagerProps {
   strikes: Strike[];
@@ -42,6 +43,7 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
   const [isAnalyzingRisk, setIsAnalyzingRisk] = useState(false);
   const [isAdvising, setIsAdvising] = useState<string | null>(null);
   const [riskAssessment, setRiskAssessment] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const [formData, setFormData] = useState<Omit<Strike, 'id'>>({
     channelId: channels[0]?.id || '',
@@ -94,7 +96,7 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
     if (editingStrike) {
       setStrikes(strikes.map(s => s.id === editingStrike.id ? { ...s, ...formData } : s));
     } else {
-      setStrikes([...strikes, { id: Date.now().toString(), ...formData }]);
+      setStrikes([...strikes, { id: crypto.randomUUID(), ...formData }]);
     }
     setIsModalOpen(false);
   };
@@ -108,7 +110,54 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
       } else {
         showToast('Đã xóa cảnh báo.', 'info');
       }
+      setSelectedIds(prev => prev.filter(selectedId => selectedId !== id));
     }
+  };
+
+  const handleBulkDelete = async () => {
+    if (confirm(`Bạn có chắc muốn xóa ${selectedIds.length} cảnh báo đã chọn?`)) {
+      setStrikes(prev => prev.filter(s => !selectedIds.includes(s.id)));
+      const { error } = await supabase.from('strikes').delete().in('id', selectedIds);
+      if (error) {
+        showToast(`Lỗi xóa trên server: ${error.message}`, 'error');
+      } else {
+        showToast(`Đã xóa ${selectedIds.length} cảnh báo.`, 'info');
+      }
+      setSelectedIds([]);
+    }
+  };
+
+  const handleBulkStatusChange = (newStatus: StrikeStatus) => {
+    setStrikes(prev => prev.map(s => selectedIds.includes(s.id) ? { ...s, status: newStatus } : s));
+    showToast(`Đã cập nhật trạng thái ${selectedIds.length} cảnh báo.`, 'success');
+    setSelectedIds([]);
+  };
+
+  const handleExport = () => {
+    const dataToExport = selectedIds.length > 0 
+      ? strikes.filter(s => selectedIds.includes(s.id))
+      : strikes;
+
+    if (dataToExport.length === 0) return;
+    const exportData = dataToExport.map(s => {
+      const channel = channels.find(c => c.id === s.channelId);
+      return {
+        'Kênh': channel ? `[${channel.channelCode}] ${channel.name}` : 'Kênh đã xóa',
+        'Loại Gậy': TYPE_LABELS[s.type],
+        'Loại Lỗi': s.errorType || 'Khác',
+        'Trạng Thái': STATUS_LABELS[s.status],
+        'Ngày Nhận': new Date(s.dateReceived).toLocaleDateString('vi-VN'),
+        'Ngày Hết Hạn': new Date(s.expirationDate).toLocaleDateString('vi-VN'),
+        'Chi Tiết': s.details || '',
+        'Lịch Sử Kháng Cáo': (s.appealHistory || []).join('\n')
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BanQuyen');
+    XLSX.writeFile(wb, `BanQuyen_YouTube_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    showToast(`Đã xuất ${dataToExport.length} cảnh báo ra file Excel`, 'success');
   };
 
   const calculateDaysLeft = (expirationDate: string) => {
@@ -200,14 +249,38 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
           <h1 className="text-2xl font-bold text-gray-900">Bản quyền & Rủi ro</h1>
           <p className="text-sm text-gray-500 mt-1">Quản lý gậy, lịch sử kháng cáo và phân tích rủi ro</p>
         </div>
-        {hasPermission('copyright_edit') && (
-        <button
-          onClick={() => handleOpenModal()}
-          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors"
-        >
-          <Plus size={16} className="mr-2" /> Thêm cảnh báo
-        </button>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {selectedIds.length > 0 && hasPermission('copyright_edit') && (
+            <div className="flex items-center gap-2 bg-red-50 px-2 py-1 rounded-lg border border-red-100">
+              <span className="text-sm font-medium text-red-800">Đã chọn {selectedIds.length}</span>
+              <select className="px-2 py-1.5 border border-gray-300 rounded text-sm bg-white text-gray-700" onChange={(e) => { if (e.target.value) handleBulkStatusChange(e.target.value as StrikeStatus); e.target.value = ''; }}>
+                <option value="">-- Đổi trạng thái --</option>
+                <option value="active">Đang bị gậy</option>
+                <option value="appealed">Đang kháng cáo</option>
+                <option value="expired">Đã hết hạn</option>
+                <option value="resolved">Đã gỡ gậy</option>
+              </select>
+              <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded text-sm font-medium transition-colors">
+                Xóa
+              </button>
+            </div>
+          )}
+          <button
+            onClick={handleExport}
+            disabled={strikes.length === 0}
+            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors disabled:opacity-50"
+          >
+            <Download size={16} className="mr-2" /> Xuất Excel
+          </button>
+          {hasPermission('copyright_edit') && (
+            <button
+              onClick={() => handleOpenModal()}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors"
+            >
+              <Plus size={16} className="mr-2" /> Thêm cảnh báo
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stats Section */}
@@ -276,9 +349,18 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
           const isExpired = daysLeft <= 0;
 
           return (
-            <div key={strike.id} className={`bg-white rounded-xl shadow-sm border p-5 flex flex-col ${strike.status === 'active' && !isExpired ? 'border-red-200' : 'border-gray-100'}`}>
+            <div key={strike.id} className={`bg-white rounded-xl shadow-sm border p-5 flex flex-col ${strike.status === 'active' && !isExpired ? 'border-red-200' : 'border-gray-100'} ${selectedIds.includes(strike.id) ? 'ring-2 ring-red-400 bg-red-50/10' : ''}`}>
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center space-x-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.includes(strike.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedIds(prev => [...prev, strike.id]);
+                      else setSelectedIds(prev => prev.filter(id => id !== strike.id));
+                    }}
+                    className="rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer w-4 h-4 mr-1"
+                  />
                   <div className={`p-2 rounded-lg ${strike.type === 'copyright' ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>
                     {strike.type === 'copyright' ? <ShieldAlert size={20} /> : <AlertTriangle size={20} />}
                   </div>

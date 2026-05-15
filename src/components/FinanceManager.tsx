@@ -109,7 +109,7 @@ export function FinanceManager({
 
     if (isOtherCategory && newCategoryName.trim()) {
       const newCat: TransactionCategory = {
-        id: Date.now().toString(),
+        id: crypto.randomUUID(),
         name: newCategoryName.trim(),
         type: transFormData.type as 'income' | 'expense'
       };
@@ -118,10 +118,13 @@ export function FinanceManager({
     }
 
     const newTrans: Transaction = {
-      id: editingId || Date.now().toString(),
+      id: editingId || crypto.randomUUID(),
       ...transFormData,
       categoryId: finalCategoryId
     };
+
+    // Tìm giao dịch cũ để hoàn trả balance trước khi áp dụng mới
+    const oldTrans = editingId ? transactions.find(t => t.id === editingId) : null;
 
     if (editingId) {
       setTransactions(prev => prev.map(t => t.id === editingId ? newTrans : t));
@@ -135,6 +138,19 @@ export function FinanceManager({
     setAccounts(prev => prev.map(acc => {
       let newBalance = acc.balance;
 
+      // Bước 1: Hoàn trả (revert) balance từ giao dịch CŨ nếu đang edit
+      if (oldTrans) {
+        if (acc.id === oldTrans.accountId) {
+          if (oldTrans.type === 'income') newBalance -= oldTrans.amount;
+          if (oldTrans.type === 'expense') newBalance += oldTrans.amount;
+          if (oldTrans.type === 'transfer') newBalance += oldTrans.amount;
+        }
+        if (oldTrans.type === 'transfer' && acc.id === oldTrans.toAccountId) {
+          newBalance -= oldTrans.amount;
+        }
+      }
+
+      // Bước 2: Áp dụng balance từ giao dịch MỚI
       if (acc.id === transFormData.accountId) {
         if (transFormData.type === 'income') newBalance += transFormData.amount;
         if (transFormData.type === 'expense') newBalance -= transFormData.amount;
@@ -197,7 +213,7 @@ export function FinanceManager({
       setAccounts(prev => prev.map(a => a.id === editingId ? { ...a, ...accFormData } : a));
       showToast('Đã cập nhật tài khoản thành công!', 'success');
     } else {
-      setAccounts(prev => [...prev, { id: Date.now().toString(), ...accFormData }]);
+      setAccounts(prev => [...prev, { id: crypto.randomUUID(), ...accFormData }]);
       showToast('Đã thêm tài khoản mới thành công!', 'success');
     }
     setIsModalOpen(false);
@@ -291,7 +307,7 @@ export function FinanceManager({
       setFinancials(prev => prev.map(f => f.id === editingId ? { ...f, ...finalData } : f));
       showToast('Đã cập nhật báo cáo kênh thành công!', 'success');
     } else {
-      setFinancials(prev => [...prev, { id: Date.now().toString(), ...finalData }]);
+      setFinancials(prev => [...prev, { id: crypto.randomUUID(), ...finalData }]);
       showToast('Đã thêm báo cáo kênh mới thành công!', 'success');
     }
     setIsModalOpen(false);

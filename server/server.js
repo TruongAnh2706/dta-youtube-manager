@@ -52,8 +52,49 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-app.use(cors());
+// CORS: Chỉ cho phép các origin đáng tin cậy
+const ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://dta-studio.vercel.app',
+    'https://truonganh2706.github.io',
+    process.env.FRONTEND_URL // Cho phép cấu hình thêm qua env
+].filter(Boolean);
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Cho phép request không có origin (ví dụ: Postman, server-to-server)
+        if (!origin) return callback(null, true);
+        if (ALLOWED_ORIGINS.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Không được phép truy cập từ origin này (CORS Policy).'));
+    },
+    credentials: true
+}));
 app.use(express.json());
+
+// ========================================
+// MIDDLEWARE: Xác thực JWT cho các endpoint nhạy cảm
+// ========================================
+async function verifyAuth(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Thiếu token xác thực. Vui lòng đăng nhập lại.' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    try {
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        if (error || !user) {
+            return res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn.' });
+        }
+        req.authUser = user;
+        next();
+    } catch (err) {
+        return res.status(401).json({ error: 'Lỗi xác thực token.' });
+    }
+}
 
 // ========================================
 // P0.2: AUTH ENDPOINTS (bcrypt)

@@ -10,9 +10,11 @@ interface TopicCardProps {
   isExpanded: boolean;
   onToggleExpand: () => void;
   staffList: Staff[];
+  isSelected?: boolean;
+  onSelectToggle?: () => void;
 }
 
-export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand, staffList }: TopicCardProps) {
+export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand, staffList, isSelected, onSelectToggle }: TopicCardProps) {
   const { hasPermission } = usePermissions();
   // Defensive checks for missing arrays
   const tags = topic.tags || [];
@@ -26,6 +28,14 @@ export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand,
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-3">
+            {onSelectToggle && (
+              <input 
+                type="checkbox"
+                checked={isSelected || false}
+                onChange={onSelectToggle}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4"
+              />
+            )}
             <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: topic.color }}></div>
             <div>
               <h3 className="font-bold text-gray-900 text-lg">{topic.name}</h3>

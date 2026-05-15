@@ -10,8 +10,14 @@ interface AutoSaveServiceProps {
 export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceProps) {
     const { showToast } = useToast();
     const prevDataRef = useRef<any>(null);
+    const latestDataRef = useRef<any>(dataToSync);
     const isInitialMount = useRef(true);
     const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Keep track of latest data
+    useEffect(() => {
+        latestDataRef.current = dataToSync;
+    }, [dataToSync]);
 
     // P1.4: staff_list và system_settings KHÔNG auto-save push từ client
     // staff_list chỉ ghi qua server API (Supabase Auth endpoints)
@@ -50,12 +56,14 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
         }
 
         if (saveTimeoutRef.current) {
-            clearTimeout(saveTimeoutRef.current);
+            return; // Throttle: Nếu đang có tiến trình đếm ngược save thì không đếm lại từ đầu (tránh starvation do update liên tục 1s/lần)
         }
 
         saveTimeoutRef.current = setTimeout(async () => {
+            saveTimeoutRef.current = null; // Xóa cờ để cho phép lượt save tiếp theo
+
             const prev = prevDataRef.current;
-            const current = dataToSync;
+            const current = latestDataRef.current; // Phải dùng ref để lấy data mới nhất tại thời điểm chạy hàm
 
             for (const { key, table } of pushTablesMap) {
                 const prevData = prev[key];
@@ -64,10 +72,21 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
                 // Bỏ qua nếu dữ liệu không phải array
                 if (!Array.isArray(currentData)) continue;
 
-                // Chỉ lưu nếu thực sự có thay đổi từ phía Client
-                const hasChanged = JSON.stringify(prevData) !== JSON.stringify(currentData);
+                // Chỉ lưu nếu thực sự có thay đổi từ phía Client (Tối ưu hóa: không stringify toàn bộ mảng)
+                let hasChanged = false;
+                if (!prevData || !Array.isArray(prevData) || prevData.length !== currentData.length) {
+                    hasChanged = true;
+                } else {
+                    // Kiểm tra nhanh từng phần tử thay vì stringify mảng khổng lồ
+                    for (let i = 0; i < currentData.length; i++) {
+                        if (JSON.stringify(currentData[i]) !== JSON.stringify(prevData[i])) {
+                            hasChanged = true;
+                            break;
+                        }
+                    }
+                }
 
-                // Ngoại lệ: Nếu lần đầu load trang (prevData=[], currentData=[]) => bỏ qua
+                // Ngoại lệ: Nếu không có thay đổi => bỏ qua
                 if (!hasChanged) continue;
 
                 try {

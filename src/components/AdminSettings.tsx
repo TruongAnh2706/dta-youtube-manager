@@ -41,7 +41,7 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
     if (!newKey.trim()) return;
 
     const keyObj: ApiKey = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       key: newKey.trim(),
       provider: newKeyProvider,
       status: 'active',

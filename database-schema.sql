@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS source_channels (
   latest_videos JSONB DEFAULT '[]'::jsonb,
   top_videos JSONB DEFAULT '[]'::jsonb,
   allowed_staff_ids JSONB DEFAULT '[]'::jsonb,
+  country TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -291,6 +292,9 @@ CREATE TABLE IF NOT EXISTS system_settings (
   audit_logs JSONB DEFAULT '[]'::jsonb,
   training_docs JSONB DEFAULT '[]'::jsonb,
   role_permissions JSONB,
+  email_statuses JSONB DEFAULT '[]'::jsonb,
+  task_statuses JSONB DEFAULT '[]'::jsonb,
+  active_gemini_key_index INTEGER DEFAULT 0,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -299,33 +303,14 @@ INSERT INTO system_settings (id) VALUES ('SYSTEM_DEFAULT_ID') ON CONFLICT (id) D
 
 
 -- =========================================================================
---  CHIA SẺ QUYỀN TRUY CẬP FULL APP (TẮT RLS) ĐỂ API CALL TỪ DTA CLIENT ĐƯỢC CHẤP NHẬN
+--  BẢO MẬT: CẤP QUYỀN CHO AUTHENTICATED & SERVICE_ROLE
+--  ⚠️ KHÔNG CẤP QUYỀN CHO ANON ĐỂ TRÁNH LỘ DỮ LIỆU
+--  Để thiết lập RLS đầy đủ, vui lòng chạy file: rls-policies.sql
 -- =========================================================================
-ALTER TABLE staff_list DISABLE ROW LEVEL SECURITY;
-ALTER TABLE topics DISABLE ROW LEVEL SECURITY;
-ALTER TABLE channels DISABLE ROW LEVEL SECURITY;
-ALTER TABLE source_channels DISABLE ROW LEVEL SECURITY;
-ALTER TABLE competitors DISABLE ROW LEVEL SECURITY;
-ALTER TABLE video_tasks DISABLE ROW LEVEL SECURITY;
-ALTER TABLE financials DISABLE ROW LEVEL SECURITY;
-ALTER TABLE assets DISABLE ROW LEVEL SECURITY;
-ALTER TABLE proxies DISABLE ROW LEVEL SECURITY;
-ALTER TABLE strikes DISABLE ROW LEVEL SECURITY;
-ALTER TABLE transaction_categories DISABLE ROW LEVEL SECURITY;
-ALTER TABLE financial_accounts DISABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE licenses DISABLE ROW LEVEL SECURITY;
-ALTER TABLE system_settings DISABLE ROW LEVEL SECURITY;
-
--- =========================================================================
---  BƯỚC QUAN TRỌNG NHẤT: CẤP QUYỀN (GRANT) CHO API (TRÁNH LỖI PERMISSION DENIED)
--- =========================================================================
--- Cho phép API từ Web (ẩn danh hoặc đăng nhập chung) được quyền Đọc/Ghi full Table
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO anon;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO service_role;
-
--- Cấp quyền tương tự cho các sequence nếu sau này có dùng (dù hiện tại xài TEXT)
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO anon;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
+
+-- Ngoại lệ: staff_list cần cho anon đọc (phục vụ login mapping)
+GRANT SELECT ON staff_list TO anon;

@@ -26,6 +26,13 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
   const totalSubscribers = channels.reduce((sum, c) => sum + c.subscribers, 0);
   const isManagement = currentUser?.role === 'admin' || currentUser?.role === 'manager';
 
+  /** Format số subscriber thông minh: 500 → "500", 12500 → "12.5K", 1500000 → "1.50M" */
+  const formatSubscriberCount = (count: number): string => {
+    if (count >= 1_000_000) return (count / 1_000_000).toFixed(2) + 'M';
+    if (count >= 1_000) return (count / 1_000).toFixed(1) + 'K';
+    return count.toLocaleString('vi-VN');
+  };
+
   // Calculate current month cashflow
   const currentMonth = new Date().toISOString().slice(0, 7);
   const currentMonthFinancials = financials.filter(f => f.month === currentMonth);
@@ -190,7 +197,7 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
         </div>
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-center">
           <div className="p-3 bg-purple-50 text-purple-600 rounded-lg mr-4"><Users size={24} /></div>
-          <div><p className="text-sm text-gray-500 font-medium">Người đăng ký</p><p className="text-2xl font-bold text-gray-900">{(totalSubscribers / 1000000).toFixed(2)}M</p></div>
+          <div><p className="text-sm text-gray-500 font-medium">Người đăng ký</p><p className="text-2xl font-bold text-gray-900">{formatSubscriberCount(totalSubscribers)}</p></div>
         </div>
       </div>
 

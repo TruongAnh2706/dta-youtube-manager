@@ -63,7 +63,7 @@ export function CompetitorSpy({ competitors, setCompetitors, youtubeApiKey, gemi
     if (editingCompetitor) {
       setCompetitors(competitors.map(c => c.id === editingCompetitor.id ? { ...c, ...formData } : c));
     } else {
-      setCompetitors([...competitors, { id: Date.now().toString(), ...formData }]);
+      setCompetitors([...competitors, { id: crypto.randomUUID(), ...formData }]);
     }
     setIsModalOpen(false);
   };

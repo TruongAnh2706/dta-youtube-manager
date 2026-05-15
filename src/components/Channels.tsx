@@ -322,24 +322,37 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     setIsScanningDead(true);
     setImportProgress({ current: 0, total: channelsToScan.length });
     let deadCount = 0;
+    let skippedCount = 0;
 
     for (let i = 0; i < channelsToScan.length; i++) {
        const target = channelsToScan[i];
+
+       if (target.lastHealthCheck) {
+         const lastCheck = new Date(target.lastHealthCheck).getTime();
+         if (Date.now() - lastCheck < 24 * 60 * 60 * 1000) {
+           skippedCount++;
+           continue;
+         }
+       }
+
        setImportProgress({ current: i + 1, total: channelsToScan.length });
        setAnalyzingChannelId(target.id);
        
        try {
          if (i > 0) await sleep(1000);
          await fetchYoutubeChannelInfo(target.url, youtubeApiKey, true);
+         setChannels(prev => prev.map(c => c.id === target.id ? { ...c, lastHealthCheck: new Date().toISOString() } : c));
        } catch (err: any) {
          if (err.message === "Không tìm thấy kênh. Vui lòng kiểm tra lại đường dẫn (URL) có chính xác không.") {
-            setChannels(prev => prev.map(c => c.id === target.id ? { ...c, status: 'dead' } : c));
+            setChannels(prev => prev.map(c => c.id === target.id ? { ...c, status: 'dead', lastHealthCheck: new Date().toISOString() } : c));
             deadCount++;
          } else if (err.message && (err.message.includes('quota') || err.message.includes('limit'))) {
              const rotated = rotateYoutubeKey();
              if (rotated) { i--; await sleep(1000); continue; }
              showToast('Hết quota API. Dừng quét.', 'error');
              break;
+         } else {
+             setChannels(prev => prev.map(c => c.id === target.id ? { ...c, lastHealthCheck: new Date().toISOString() } : c));
          }
        }
     }
@@ -347,7 +360,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     setIsScanningDead(false);
     setAnalyzingChannelId(null);
     setImportProgress({ current: 0, total: 0 });
-    showToast(`Quét hoàn tất. Phát hiện ${deadCount} kênh đã chết.`, 'success');
+    showToast(`Quét hoàn tất. Bỏ qua ${skippedCount} kênh mới kiểm tra. Phát hiện ${deadCount} kênh chết.`, 'success');
   };
 
   const handleBulkAIAnalysis = async () => {
@@ -363,13 +376,17 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       return;
     }
 
-    const mode = confirm(`Bạn muốn AI tự động phân tích và gắn tag cho ${channels.length} kênh?\n\n- Bấm OK để phân tích TOÀN BỘ (ghi đè tag cũ).\n- Bấm Cancel để chỉ phân tích các kênh CHƯA CÓ TAG.`)
+    const baseChannels = selectedIds.length > 0 
+      ? channels.filter(c => selectedIds.includes(c.id))
+      : channels;
+
+    const mode = confirm(`Bạn muốn AI tự động phân tích và gắn tag cho ${baseChannels.length} kênh?\n\n- Bấm OK để phân tích (ghi đè tag cũ).\n- Bấm Cancel để chỉ phân tích các kênh CHƯA CÓ TAG.`)
       ? 'all'
       : 'untagged';
 
     const channelsToProcess = mode === 'all'
-      ? channels
-      : channels.filter(c => (c.topicIds || []).length === 0);
+      ? baseChannels
+      : baseChannels.filter(c => (c.topicIds || []).length === 0);
 
     if (channelsToProcess.length === 0) {
       alert('Không có kênh nào cần phân tích theo lựa chọn của bạn.');
@@ -434,7 +451,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         const nameToIdMap: Record<string, string> = {};
 
         newTopicsToCreate.forEach((nt, name) => {
-          const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+          const id = crypto.randomUUID();
           createdTopics.push({
             id,
             name: nt.name,
@@ -551,7 +568,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           const row = newChannelsToImport[i];
           const url = row.URL || row.url || row['Link'] || '';
 
-          let channelCode = row['Mã kênh'] || row.channelCode || `CH-${Date.now().toString().slice(-4)}${i}`;
+          let channelCode = row['Mã kênh'] || row.channelCode || `CH-${crypto.randomUUID().slice(-4)}${i}`;
           let name = row['Tên kênh'] || row.name || row.Name || 'Kênh mới';
           let avatarUrl = '';
           let subscribers = parseInt(row.Subscribers || row.subscribers || '0') || 0;
@@ -575,7 +592,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                  topicIds.push(createdTopicsMap.get(tName.toLowerCase())!);
                } else {
                  // create new
-                 const newTopicId = `topic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                 const newTopicId = crypto.randomUUID();
                  createdTopicsMap.set(tName.toLowerCase(), newTopicId);
                  topicIds.push(newTopicId);
                  
@@ -777,7 +794,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       }
     }
 
-    const channelIdToUse = editingChannel ? editingChannel.id : Date.now().toString();
+    const channelIdToUse = editingChannel ? editingChannel.id : crypto.randomUUID();
     const finalChannelCode = formData.channelCode || channelIdToUse;
 
     // Tự động gán người thao tác làm nhân sự quản lý kênh (nếu không phải admin)
@@ -839,6 +856,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     }
   };
 
+  const handleBulkStatusChange = (newStatus: 'active' | 'dead') => {
+    setChannels(prev => prev.map(c => selectedIds.includes(c.id) ? { ...c, status: newStatus } : c));
+    showToast(`Đã cập nhật trạng thái ${selectedIds.length} kênh thành ${newStatus}`, 'success');
+    setSelectedIds([]);
+  };
+
   const toggleTopic = (topicId: string) => {
     setFormData(prev => ({
       ...prev,
@@ -864,8 +887,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   };
 
   const handleExport = () => {
-    if (channels.length === 0) return;
-    const ws = XLSX.utils.json_to_sheet(channels.map(c => ({
+    const channelsToExport = selectedIds.length > 0 
+      ? channels.filter(c => selectedIds.includes(c.id))
+      : channels;
+
+    if (channelsToExport.length === 0) return;
+    const ws = XLSX.utils.json_to_sheet(channelsToExport.map(c => ({
       'Mã kênh': c.channelCode,
       'Tên kênh': c.name,
       'URL': c.url,
@@ -1031,6 +1058,11 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                 </button>
               </>
             )}
+            <select className="px-3 py-1.5 border border-gray-300 rounded text-sm bg-white text-gray-700" onChange={(e) => { if (e.target.value) handleBulkStatusChange(e.target.value as any); e.target.value = ''; }}>
+              <option value="">-- Đổi trạng thái --</option>
+              <option value="active">Active (Sống)</option>
+              <option value="dead">Dead (Chết)</option>
+            </select>
             <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors">
               Xóa {selectedIds.length} kênh
             </button>

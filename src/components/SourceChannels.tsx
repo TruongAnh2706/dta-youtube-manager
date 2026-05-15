@@ -73,8 +73,11 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTopic, setFilterTopic] = useState<string>('all');
   const [filterNiche, setFilterNiche] = useState<string>('all');
+  const [filterCountry, setFilterCountry] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isScanningDead, setIsScanningDead] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 20;
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -175,7 +178,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     const newTasks: VideoTask[] = assignTaskChannelIds.map(channelId => {
        const channel = sourceChannels.find(c => c.id === channelId);
        return {
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          id: crypto.randomUUID(),
           title: assignTaskFormData.title,
           description: assignTaskFormData.description,
           status: 'pending',
@@ -208,6 +211,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         'Số Video': 100,
         'Đánh giá': 4,
         'Chủ đề': 'Giải trí, Hài hước',
+        'Quốc gia': 'Vietnam',
         'Ghi chú': 'Kênh tham khảo tốt'
       },
       {
@@ -218,6 +222,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         'Số Video': 200,
         'Đánh giá': 5,
         'Chủ đề': 'Game',
+        'Quốc gia': 'US',
         'Ghi chú': 'Kênh đối thủ chính'
       },
     ];
@@ -257,7 +262,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         if (result.newTopics.length > 0) {
           if (confirm(`AI đề xuất thêm các chủ đề mới: ${result.newTopics.map(t => t.name).join(', ')}. Bạn có muốn tự động tạo các chủ đề này không?`)) {
             const newCreatedTopics: Topic[] = result.newTopics.map(nt => ({
-              id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+              id: crypto.randomUUID(),
               name: nt.name,
               color: nt.color,
               description: `Được tạo tự động bởi AI cho kênh ${targetChannel.name}`,
@@ -383,16 +388,28 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     setIsScanningDead(true);
     setImportProgress({ current: 0, total: channelsToScan.length });
     let deadCount = 0;
+    let skippedCount = 0;
     const deadIds: string[] = [];
+    const checkedIds: string[] = [];
 
     for (let i = 0; i < channelsToScan.length; i++) {
        const target = channelsToScan[i];
+
+       if (target.lastHealthCheck) {
+         const lastCheck = new Date(target.lastHealthCheck).getTime();
+         if (Date.now() - lastCheck < 24 * 60 * 60 * 1000) {
+           skippedCount++;
+           continue;
+         }
+       }
+
        setImportProgress({ current: i + 1, total: channelsToScan.length });
        setAnalyzingChannelId(target.id);
        
        try {
          if (i > 0) await sleep(1000);
          await fetchYoutubeChannelInfo(target.url, youtubeApiKey, true);
+         checkedIds.push(target.id);
        } catch (err: any) {
          if (err.message === "Không tìm thấy kênh. Vui lòng kiểm tra lại đường dẫn (URL) có chính xác không.") {
             deadIds.push(target.id);
@@ -402,18 +419,24 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
              if (rotated) { i--; await sleep(1000); continue; }
              showToast('Hết quota API. Dừng quét.', 'error');
              break;
+         } else {
+             checkedIds.push(target.id);
          }
        }
     }
 
-    if (deadIds.length > 0) {
-        setSourceChannels(prev => prev.map(c => deadIds.includes(c.id) ? { ...c, status: 'dead' } : c));
+    if (checkedIds.length > 0 || deadIds.length > 0) {
+        setSourceChannels(prev => prev.map(c => {
+            if (deadIds.includes(c.id)) return { ...c, status: 'dead', lastHealthCheck: new Date().toISOString() };
+            if (checkedIds.includes(c.id)) return { ...c, lastHealthCheck: new Date().toISOString() };
+            return c;
+        }));
     }
 
     setIsScanningDead(false);
     setAnalyzingChannelId(null);
     setImportProgress({ current: 0, total: 0 });
-    showToast(`Quét hoàn tất. Phát hiện ${deadCount} kênh chết.`, 'success');
+    showToast(`Quét hoàn tất. Bỏ qua ${skippedCount} kênh mới kiểm tra. Phát hiện ${deadCount} kênh chết.`, 'success');
   };
 
   const handleBulkAIAnalysis = async () => {
@@ -429,13 +452,17 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
       return;
     }
 
-    const mode = confirm(`Bạn muốn AI tự động phân tích và gắn tag cho ${sourceChannels.length} kênh?\n\n- Bấm OK để phân tích TOÀN BỘ (ghi đè tag cũ).\n- Bấm Cancel để chỉ phân tích các kênh CHƯA CÓ TAG.`)
+    const baseChannels = selectedIds.length > 0 
+      ? sourceChannels.filter(c => selectedIds.includes(c.id))
+      : sourceChannels;
+
+    const mode = confirm(`Bạn muốn AI tự động phân tích và gắn tag cho ${baseChannels.length} kênh?\n\n- Bấm OK để phân tích (ghi đè tag cũ).\n- Bấm Cancel để chỉ phân tích các kênh CHƯA CÓ TAG.`)
       ? 'all'
       : 'untagged';
 
     const channelsToProcess = mode === 'all'
-      ? sourceChannels
-      : sourceChannels.filter(c => (c.topicIds || []).length === 0);
+      ? baseChannels
+      : baseChannels.filter(c => (c.topicIds || []).length === 0);
 
     if (channelsToProcess.length === 0) {
       alert('Không có kênh nào cần phân tích theo lựa chọn của bạn.');
@@ -496,7 +523,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         const nameToIdMap: Record<string, string> = {};
 
         newTopicsToCreate.forEach((nt, name) => {
-          const id = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+          const id = crypto.randomUUID();
           createdTopics.push({
             id,
             name: nt.name,
@@ -599,8 +626,6 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         let currentApiKey = youtubeApiKey || '';
 
         let createdTopicsMap = new Map<string, string>(); // name -> id
-        const accumulatedTopics: Topic[] = [];
-        const accumulatedChannels: SourceChannel[] = [];
 
         for (let i = 0; i < newChannelsToImport.length; i++) {
           setImportProgress({ current: i + 1, total: newChannelsToImport.length });
@@ -615,6 +640,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           let rating = parseInt(row['Đánh giá'] || row.rating || '3') || 3;
           let notes = row['Ghi chú'] || row.notes || '';
           let rawTopicStr = row['Chủ đề'] || row.topics || row.tag || '';
+          let country = row['Quốc gia'] || row.country || 'Vietnam';
 
           let topicIds: string[] = [];
           if (rawTopicStr) {
@@ -626,18 +652,34 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                } else if (createdTopicsMap.has(tName.toLowerCase())) {
                  topicIds.push(createdTopicsMap.get(tName.toLowerCase())!);
                } else {
-                 const newTopicId = `topic-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+                 const newTopicId = crypto.randomUUID();
                  createdTopicsMap.set(tName.toLowerCase(), newTopicId);
                  topicIds.push(newTopicId);
                  
-                 accumulatedTopics.push({
+                 const newTopic = {
                     id: newTopicId,
                     name: tName,
                     description: 'Tạo tự động từ file Excel (Kênh Nguồn)',
                     color: '#' + Math.floor(Math.random()*16777215).toString(16),
-                    tags: [], hashtags: [], country: 'Vietnam',
+                    tags: [], hashtags: [], country: country,
                     niche: 'Khác'
+                 };
+                 
+                 // LƯU TRỰC TIẾP CHỦ ĐỀ VÀO SUPABASE NGAY
+                 supabase.from('topics').upsert([{
+                    id: newTopic.id,
+                    name: newTopic.name,
+                    description: newTopic.description,
+                    color: newTopic.color,
+                    tags: newTopic.tags,
+                    hashtags: newTopic.hashtags,
+                    country: newTopic.country,
+                    niche: newTopic.niche
+                 }], { onConflict: 'id' }).then(({error}) => {
+                     if(error) console.error("Lỗi lưu Topic:", error);
                  });
+
+                 setTopics(prev => [...prev, newTopic]);
                }
             });
           }
@@ -654,12 +696,12 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
 
             const info = await fetchYoutubeChannelInfo(url, currentApiKey, true);
             
-            // --- BỘ LỌC TRÙNG LẶP LẦN 2 (Deep Filter) ---
-            // Lọc trùng sau khi đã có thông tin thực tế từ YouTube. 
-            // Điều này giải quyết vấn đề: 2 link khác nhau (vd 1 link ID, 1 link Handle) nhưng trỏ về cùng 1 kênh.
+            // BỘ LỌC TRÙNG LẶP LẦN 2 (Deep Filter)
+            // Lọc trùng sau khi đã có thông tin thực tế từ YouTube.
+            // Giải quyết vấn đề: 2 link khác nhau (vd 1 link ID, 1 link Handle) nhưng trỏ về cùng 1 kênh.
+            // So sánh thẳng với sourceChannels mới nhất (đã cập nhật liên tục)
             const isDupInfo = sourceChannels.some(sc => sc.name === info.name && sc.subscribers === info.subscribers) ||
-                              channels.some(c => c.name === info.name && c.subscribers === info.subscribers) ||
-                              accumulatedChannels.some(sc => sc.name === info.name && sc.subscribers === info.subscribers);
+                              channels.some(c => c.name === info.name && c.subscribers === info.subscribers);
                               
             if (isDupInfo) {
                 console.log(`[Deep Filter] Bỏ qua kênh ${info.name} vì đã tồn tại trong hệ thống.`);
@@ -714,21 +756,45 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             description,
             latestVideos,
             topVideos,
-            notes
+            notes,
+            country
           };
 
-          accumulatedChannels.push(newChannel);
+          // ⚡ TRỰC TIẾP LƯU VÀO SUPABASE NGAY LẬP TỨC (Direct Insert)
+          // Bỏ qua AutoSaveService để đảm bảo an toàn tuyệt đối và nhận lỗi trực tiếp
+          const { error: insertError } = await supabase.from('source_channels').upsert([{
+            id: newChannel.id,
+            name: newChannel.name,
+            url: newChannel.url,
+            avatar_url: newChannel.avatarUrl,
+            topic_ids: newChannel.topicIds,
+            rating: newChannel.rating,
+            upload_frequency: newChannel.uploadFrequency,
+            average_views: newChannel.averageViews,
+            subscribers: newChannel.subscribers,
+            total_views: newChannel.totalViews,
+            video_count: newChannel.videoCount,
+            published_at: newChannel.publishedAt,
+            description: newChannel.description,
+            latest_videos: newChannel.latestVideos,
+            top_videos: newChannel.topVideos,
+            notes: newChannel.notes,
+            country: newChannel.country,
+            status: 'active'
+          }], { onConflict: 'id' });
+
+          if (insertError) {
+             console.error(`❌ Lỗi Insert Supabase Kênh ${newChannel.name}:`, insertError);
+             showToast(`Lỗi lưu CSDL kênh ${newChannel.name}: ${insertError.message}`, 'error');
+             errorCount++;
+             continue; // Bỏ qua không push vào UI nếu DB lỗi
+          }
+
+          setSourceChannels(prev => [...prev, newChannel]);
           successCount++;
         }
 
-        if (accumulatedTopics.length > 0) {
-            setTopics(prev => [...prev, ...accumulatedTopics]);
-        }
-        if (accumulatedChannels.length > 0) {
-            setSourceChannels(prev => [...prev, ...accumulatedChannels]);
-        }
-
-        showToast(`Nhập hoàn tất: Tổng ${accumulatedChannels.length} kênh mới, lỗi ${errorCount}.${duplicateCount > 0 ? ` (Bỏ qua ${duplicateCount} kênh trùng lặp)` : ''}${createdTopicsMap.size > 0 ? ` Đã tạo tự động ${createdTopicsMap.size} chủ đề.` : ''}`, successCount > 0 ? 'success' : 'error');
+        showToast(`Nhập hoàn tất: Tổng ${successCount} kênh mới, lỗi ${errorCount}.${duplicateCount > 0 ? ` (Bỏ qua ${duplicateCount} kênh trùng lặp)` : ''}${createdTopicsMap.size > 0 ? ` Đã tạo tự động ${createdTopicsMap.size} chủ đề.` : ''}`, successCount > 0 ? 'success' : 'info');
       } catch (err) {
         showToast('Lỗi khi đọc file Excel. Vui lòng kiểm tra lại định dạng.', 'error');
       } finally {
@@ -849,7 +915,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
       setSourceChannels(prev => prev.map(c => c.id === editingChannel.id ? { ...c, ...formData } : c));
       showToast('Đã cập nhật kênh nguồn thành công!', 'success');
     } else {
-      setSourceChannels(prev => [...prev, { id: Date.now().toString(), ...formData }]);
+      setSourceChannels(prev => [...prev, { id: crypto.randomUUID(), ...formData }]);
       showToast('Đã thêm kênh nguồn mới thành công!', 'success');
     }
     handleCloseModal();
@@ -866,6 +932,12 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         showToast('Đã xóa kênh nguồn.', 'info');
       }
     }
+  };
+
+  const handleBulkStatusChange = (newStatus: 'active' | 'dead') => {
+    setSourceChannels(prev => prev.map(c => selectedIds.includes(c.id) ? { ...c, status: newStatus } : c));
+    showToast(`Đã cập nhật trạng thái ${selectedIds.length} kênh thành ${newStatus}`, 'success');
+    setSelectedIds([]);
   };
 
   const toggleTopic = (topicId: string) => {
@@ -891,8 +963,12 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
   };
 
   const handleExport = () => {
-    if (sourceChannels.length === 0) return;
-    const ws = XLSX.utils.json_to_sheet(sourceChannels.map(c => ({
+    const channelsToExport = selectedIds.length > 0 
+      ? sourceChannels.filter(c => selectedIds.includes(c.id))
+      : sourceChannels;
+
+    if (channelsToExport.length === 0) return;
+    const ws = XLSX.utils.json_to_sheet(channelsToExport.map(c => ({
       'Tên kênh': c.name,
       'URL': c.url,
       'Subscribers': c.subscribers,
@@ -911,6 +987,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     const matchesSearch = channel.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (channel.url || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTopic = filterTopic === 'all' || (channel.topicIds && channel.topicIds.includes(filterTopic));
+    const matchesCountry = filterCountry === 'all' || (channel.country || 'Vietnam') === filterCountry;
 
     let matchesNiche = true;
     if (filterNiche !== 'all') {
@@ -925,7 +1002,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     const isAllowed = isLeaderOrAbove || (!isPublic && currentUser && channel.allowedStaffIds?.includes(currentUser.id));
     const matchesStatus = filterStatus === 'all' || (filterStatus === 'dead' ? channel.status === 'dead' : channel.status !== 'dead');
 
-    return matchesSearch && matchesTopic && matchesNiche && isAllowed && matchesStatus;
+    return matchesSearch && matchesCountry && matchesTopic && matchesNiche && isAllowed && matchesStatus;
   }).sort((a, b) => {
     // Sort by rating descending, then by subscribers descending
     if (a.rating !== b.rating) {
@@ -933,6 +1010,9 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     }
     return (b.subscribers || 0) - (a.subscribers || 0);
   });
+
+  const totalPages = Math.ceil(filteredChannels.length / itemsPerPage);
+  const paginatedChannels = filteredChannels.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // Calculate viewable topics / channels for privacy
   const viewableSourceChannels = sourceChannels.filter(channel => {
@@ -1052,12 +1132,30 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         </div>
         
         <select
+          value={filterCountry}
+          onChange={e => {
+            setFilterCountry(e.target.value);
+            setFilterNiche('all');
+            setFilterTopic('all');
+          }}
+          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px]"
+        >
+          <option value="all">Tất cả Quốc gia</option>
+          {Array.from(new Set(viewableSourceChannels.map(c => c.country || 'Vietnam'))).filter(Boolean).map(country => (
+            <option key={country} value={country}>{country}</option>
+          ))}
+        </select>
+        
+        <select
           value={filterNiche}
-          onChange={e => setFilterNiche(e.target.value)}
+          onChange={e => {
+            setFilterNiche(e.target.value);
+            setFilterTopic('all');
+          }}
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px]"
         >
           <option value="all">Tất cả Nhóm CĐ</option>
-          {Array.from(new Set(viewableTopics.map(t => t.niche || 'Khác'))).map(niche => (
+          {Array.from(new Set(viewableTopics.filter(t => filterCountry === 'all' || (t.country || 'Vietnam') === filterCountry).map(t => t.niche || 'Khác'))).map(niche => (
             <option key={niche} value={niche}>{niche}</option>
           ))}
         </select>
@@ -1068,7 +1166,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px]"
         >
           <option value="all">Tất cả tag chủ đề</option>
-          {viewableTopics.filter(t => filterNiche === 'all' || (t.niche || 'Khác') === filterNiche).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {viewableTopics.filter(t => (filterCountry === 'all' || (t.country || 'Vietnam') === filterCountry) && (filterNiche === 'all' || (t.niche || 'Khác') === filterNiche)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </div>
 
@@ -1109,6 +1207,11 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             <button onClick={() => handleOpenAssignTask(sourceChannels.filter(c => selectedIds.includes(c.id)))} className="px-3 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors flex items-center">
               <ClipboardList size={14} className="mr-1" /> Giao Task
             </button>
+            <select className="px-3 py-1.5 border border-gray-300 rounded text-sm bg-white text-gray-700" onChange={(e) => { if (e.target.value) handleBulkStatusChange(e.target.value as any); e.target.value = ''; }}>
+              <option value="">-- Đổi trạng thái --</option>
+              <option value="active">Active (Sống)</option>
+              <option value="dead">Dead (Chết)</option>
+            </select>
             {hasPermission('sources_edit') && (
               <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors">
                 Xóa {selectedIds.length} kênh
@@ -1143,7 +1246,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {filteredChannels.map(channel => {
+            {paginatedChannels.map(channel => {
               const isSelected = selectedIds.includes(channel.id);
               return (
               <tr key={channel.id} className={`hover:bg-gray-50 transition-colors ${isSelected ? 'bg-orange-50/30' : ''} ${analyzingChannelId === channel.id ? 'bg-purple-50/50' : ''} ${channel.status === 'dead' ? 'bg-red-50/80 !border-red-200' : ''}`}>
@@ -1339,6 +1442,52 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-gray-100 shadow-sm mt-4">
+          <span className="text-sm text-gray-500">
+            Hiển thị <span className="font-bold text-gray-900">{(currentPage - 1) * itemsPerPage + 1}</span> đến <span className="font-bold text-gray-900">{Math.min(currentPage * itemsPerPage, filteredChannels.length)}</span> trong số <span className="font-bold text-gray-900">{filteredChannels.length}</span> kênh
+          </span>
+          <div className="flex space-x-1">
+            <button 
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} 
+              disabled={currentPage === 1}
+              className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Trang trước
+            </button>
+            <div className="flex items-center space-x-1 px-2">
+              {[...Array(totalPages)].map((_, i) => {
+                const page = i + 1;
+                // Simple pagination display: show first, last, current, and adjacent
+                if (page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1)) {
+                   return (
+                     <button
+                       key={page}
+                       onClick={() => setCurrentPage(page)}
+                       className={`w-8 h-8 rounded-md text-sm font-medium transition-colors ${currentPage === page ? 'bg-orange-600 text-white' : 'text-gray-700 hover:bg-orange-50 hover:text-orange-600'}`}
+                     >
+                       {page}
+                     </button>
+                   );
+                }
+                if (page === currentPage - 2 || page === currentPage + 2) {
+                   return <span key={page} className="text-gray-400">...</span>;
+                }
+                return null;
+              })}
+            </div>
+            <button 
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} 
+              disabled={currentPage === totalPages}
+              className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            >
+              Trang sau
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* View Details Modal */}
       {viewingChannel && (

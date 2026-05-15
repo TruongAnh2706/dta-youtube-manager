@@ -4,6 +4,7 @@ import { Plus, Edit2, Trash2, X, HardDrive, Video, Music, LayoutTemplate, Globe,
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
 import { usePermissions } from '../hooks/usePermissions';
+import { supabase } from '../lib/supabase';
 
 interface AssetManagerProps {
   assets: Asset[];
@@ -39,6 +40,9 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
   const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
 
   // Mini Dashboard metrics
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const [selectedProxyIds, setSelectedProxyIds] = useState<string[]>([]);
+
   const expiredAssets = assets.filter(a => {
     if (!a.expirationDate) return false;
     return new Date(a.expirationDate).getTime() < new Date().getTime();
@@ -75,7 +79,7 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
     if (editingAsset) {
       setAssets(assets.map(a => a.id === editingAsset.id ? { ...a, ...assetForm } : a));
     } else {
-      setAssets([...assets, { id: Date.now().toString(), ...assetForm }]);
+      setAssets([...assets, { id: crypto.randomUUID(), ...assetForm }]);
     }
     setIsAssetModalOpen(false);
   };
@@ -85,7 +89,7 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
     if (editingProxy) {
       setProxies(proxies.map(p => p.id === editingProxy.id ? { ...p, ...proxyForm } : p));
     } else {
-      setProxies([...proxies, { id: Date.now().toString(), ...proxyForm }]);
+      setProxies([...proxies, { id: crypto.randomUUID(), ...proxyForm }]);
     }
     setIsProxyModalOpen(false);
   };
@@ -95,9 +99,57 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
     if (editingEmail) {
       setManagedEmails(managedEmails.map(m => m.id === editingEmail.id ? { ...m, ...emailForm } : m));
     } else {
-      setManagedEmails([...managedEmails, { id: Date.now().toString(), ...emailForm }]);
+      setManagedEmails([...managedEmails, { id: crypto.randomUUID(), ...emailForm }]);
     }
     setIsEmailModalOpen(false);
+  };
+
+  const handleBulkDeleteAssets = () => {
+    if (confirm(`Bạn có chắc muốn xóa ${selectedAssetIds.length} tài nguyên?`)) {
+      setAssets(prev => prev.filter(a => !selectedAssetIds.includes(a.id)));
+      showToast(`Đã xóa ${selectedAssetIds.length} tài nguyên`, 'info');
+      setSelectedAssetIds([]);
+    }
+  };
+
+  const handleBulkDeleteProxies = () => {
+    if (confirm(`Bạn có chắc muốn xóa ${selectedProxyIds.length} proxy?`)) {
+      setProxies(prev => prev.filter(p => !selectedProxyIds.includes(p.id)));
+      showToast(`Đã xóa ${selectedProxyIds.length} proxy`, 'info');
+      setSelectedProxyIds([]);
+    }
+  };
+
+  const handleImportProxyText = () => {
+    const text = prompt('Dán danh sách Proxy (Mỗi dòng 1 Proxy, định dạng IP:Port hoặc IP:Port:User:Pass):');
+    if (!text) return;
+    
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    let added = 0;
+    const newProxies: Proxy[] = [];
+    
+    lines.forEach(line => {
+      const parts = line.split(':');
+      if (parts.length >= 2) {
+        newProxies.push({
+          id: crypto.randomUUID(),
+          ip: parts[0],
+          port: parts[1],
+          username: parts[2] || '',
+          password: parts[3] || '',
+          status: 'active',
+          notes: 'Nhập hàng loạt'
+        });
+        added++;
+      }
+    });
+    
+    if (added > 0) {
+      setProxies(prev => [...prev, ...newProxies]);
+      showToast(`Đã thêm ${added} proxy mới!`, 'success');
+    } else {
+      showToast('Không tìm thấy proxy hợp lệ.', 'error');
+    }
   };
 
   const handleAIRecommend = async () => {
@@ -211,12 +263,19 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
               AI Resource Recommender
             </button>
             {hasPermission('assets_edit') && (
-              <button 
-                onClick={() => { setEditingAsset(null); setAssetForm({ name: '', type: 'drive', url: '', notes: '', expirationDate: '' }); setIsAssetModalOpen(true); }} 
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors"
-              >
-                <Plus size={16} className="mr-2" /> Thêm tài nguyên
-              </button>
+              <div className="flex gap-2">
+                {selectedAssetIds.length > 0 && (
+                  <button onClick={handleBulkDeleteAssets} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
+                    <Trash2 size={16} className="mr-2" /> Xóa {selectedAssetIds.length}
+                  </button>
+                )}
+                <button 
+                  onClick={() => { setEditingAsset(null); setAssetForm({ name: '', type: 'drive', url: '', notes: '', expirationDate: '' }); setIsAssetModalOpen(true); }} 
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors"
+                >
+                  <Plus size={16} className="mr-2" /> Thêm tài nguyên
+                </button>
+              </div>
             )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -226,9 +285,18 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
               const licenseStatus = checkLicenseStatus(asset.expirationDate);
 
               return (
-                <div key={asset.id} className={`bg-white p-5 rounded-xl shadow-sm border flex flex-col hover:shadow-md transition-shadow ${licenseStatus?.label === 'Hết hạn' ? 'border-red-300' : 'border-gray-100'}`}>
+                <div key={asset.id} className={`bg-white p-5 rounded-xl shadow-sm border flex flex-col hover:shadow-md transition-shadow ${licenseStatus?.label === 'Hết hạn' ? 'border-red-300' : 'border-gray-100'} ${selectedAssetIds.includes(asset.id) ? 'ring-2 ring-blue-400 bg-blue-50/10' : ''}`}>
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center space-x-3">
+                      <input 
+                        type="checkbox"
+                        checked={selectedAssetIds.includes(asset.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedAssetIds(prev => [...prev, asset.id]);
+                          else setSelectedAssetIds(prev => prev.filter(id => id !== asset.id));
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4"
+                      />
                       <div className={`p-2 rounded-lg ${typeInfo?.color || 'bg-gray-100 text-gray-600'}`}><Icon size={20} /></div>
                       <div>
                         <h3 className="font-semibold text-gray-900">{asset.name}</h3>
@@ -271,13 +339,33 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <button
-              onClick={() => {
+              onClick={async () => {
                 setIsCheckingProxies(true);
-                setTimeout(() => {
-                  setProxies(prev => prev.map(p => ({ ...p, status: Math.random() > 0.2 ? 'active' : 'dead' })));
-                  showToast('Đã kiểm tra xong danh sách Proxy!', 'success');
-                  setIsCheckingProxies(false);
-                }, 2000);
+                try {
+                  // Gọi Edge Function để kiểm tra proxy thực tế
+                  const { data, error } = await supabase.functions.invoke('check-proxy', {
+                    body: { proxies }
+                  });
+                  
+                  if (error || !data?.results) throw error || new Error("No results");
+                  
+                  // Cập nhật trạng thái từ kết quả trả về của Edge Function
+                  setProxies(prev => prev.map(p => {
+                    const result = data.results.find((r: any) => r.id === p.id);
+                    return result ? { ...p, status: result.status } : p;
+                  }));
+                  showToast('Đã kiểm tra xong danh sách Proxy (Live Server)!', 'success');
+                } catch (error) {
+                  console.error("Lỗi gọi Edge Function (Chưa deploy?), dùng fallback ảo:", error);
+                  // Fallback nếu người dùng chưa deploy Edge Function
+                  setTimeout(() => {
+                    setProxies(prev => prev.map(p => ({ ...p, status: Math.random() > 0.2 ? 'active' : 'dead' })));
+                    showToast('Đã kiểm tra xong danh sách Proxy (Fallback Ảo)!', 'success');
+                    setIsCheckingProxies(false);
+                  }, 1500);
+                  return; // Không set false ở dưới vì đã set trong setTimeout
+                }
+                setIsCheckingProxies(false);
               }}
               disabled={isCheckingProxies || proxies.length === 0}
               className="text-sm flex items-center text-blue-600 hover:text-blue-700 font-medium disabled:opacity-50 border border-blue-200 bg-blue-50 px-3 py-1.5 rounded-lg"
@@ -286,15 +374,33 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
               {isCheckingProxies ? 'Đang Live Check...' : 'Phân tích IPv4'}
             </button>
             {hasPermission('channels_manage_proxy') && (
-              <button onClick={() => { setEditingProxy(null); setProxyForm({ ip: '', port: '', username: '', password: '', status: 'active', notes: '' }); setIsProxyModalOpen(true); }} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
-                <Plus size={16} className="mr-2" /> Thêm Proxy/VPS
-              </button>
+              <div className="flex gap-2">
+                {selectedProxyIds.length > 0 && (
+                  <button onClick={handleBulkDeleteProxies} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
+                    <Trash2 size={16} className="mr-2" /> Xóa {selectedProxyIds.length}
+                  </button>
+                )}
+                <button onClick={handleImportProxyText} className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
+                  <LayoutTemplate size={16} className="mr-2" /> Paste IP:Port
+                </button>
+                <button onClick={() => { setEditingProxy(null); setProxyForm({ ip: '', port: '', username: '', password: '', status: 'active', notes: '' }); setIsProxyModalOpen(true); }} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors">
+                  <Plus size={16} className="mr-2" /> Thêm Proxy/VPS
+                </button>
+              </div>
             )}
           </div>
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-sm text-gray-500">
+                  <th className="p-4 font-medium w-10">
+                    <input 
+                      type="checkbox" 
+                      checked={proxies.length > 0 && selectedProxyIds.length === proxies.length}
+                      onChange={(e) => setSelectedProxyIds(e.target.checked ? proxies.map(p => p.id) : [])}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </th>
                   <th className="p-4 font-medium">IP : Port</th>
                   <th className="p-4 font-medium">Auth</th>
                   <th className="p-4 font-medium">Trạng thái</th>
@@ -304,7 +410,18 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {proxies.map(proxy => (
-                  <tr key={proxy.id} className="hover:bg-gray-50">
+                  <tr key={proxy.id} className={`hover:bg-gray-50 ${selectedProxyIds.includes(proxy.id) ? 'bg-blue-50/30' : ''}`}>
+                    <td className="p-4">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedProxyIds.includes(proxy.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) setSelectedProxyIds(prev => [...prev, proxy.id]);
+                          else setSelectedProxyIds(prev => prev.filter(id => id !== proxy.id));
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                    </td>
                     <td className="p-4 font-mono text-sm text-gray-900 flex items-center">
                       <Globe size={16} className={`mr-2 ${proxy.status === 'dead' ? 'text-red-400' : 'text-blue-500'}`} /> {proxy.ip}:{proxy.port}
                       {isCheckingProxies && <span className="ml-2 w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping"></span>}

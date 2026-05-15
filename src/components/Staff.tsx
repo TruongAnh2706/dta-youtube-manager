@@ -131,7 +131,7 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
         showToast('Đã cập nhật thông tin nhân sự thành công!', 'success');
       } else {
         // TẠO MỚI nhân sự: Tạo Auth Account + Insert vào staff_list
-        const newStaffId = Date.now().toString();
+        const newStaffId = crypto.randomUUID();
         
         if (!formData.email || formData.email.trim() === '') {
             throw new Error('Bạn bắt buộc phải nhập Email cho nhân sự');

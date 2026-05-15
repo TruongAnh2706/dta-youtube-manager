@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Youtube, Lock, User } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
 
 import { supabase } from '../lib/supabase';
 
@@ -12,6 +12,7 @@ export function Login({ onLogin }: LoginProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,78 +64,146 @@ export function Login({ onLogin }: LoginProps) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="flex justify-center mb-4">
-          <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="DTA Studio Logo" className="w-20 h-20 object-contain drop-shadow-[0_0_12px_rgba(255,0,0,0.4)]" />
+    <div className="min-h-screen bg-[#070a10] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
+      {/* Animated Background Effects */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 -left-32 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '4s' }}></div>
+        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-red-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDuration: '6s' }}></div>
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-3xl"></div>
+        {/* Grid lines */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{
+          backgroundImage: 'linear-gradient(rgba(0,255,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,255,0.3) 1px, transparent 1px)',
+          backgroundSize: '60px 60px'
+        }}></div>
+      </div>
+
+      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+        {/* Logo with Glow */}
+        <div className="flex justify-center mb-6">
+          <div className="relative group">
+            <div className="absolute inset-0 bg-red-500/30 rounded-full blur-xl group-hover:bg-cyan-500/30 transition-colors duration-700 animate-pulse"></div>
+            <img
+              src={`${import.meta.env.BASE_URL}Logo.png`}
+              alt="DTA Studio Logo"
+              className="w-24 h-24 object-contain relative z-10 drop-shadow-[0_0_20px_rgba(255,0,0,0.5)] group-hover:drop-shadow-[0_0_20px_rgba(0,255,255,0.5)] transition-all duration-700 group-hover:scale-110"
+            />
+          </div>
         </div>
-        <h2 className="mt-2 text-center text-3xl font-extrabold text-gray-900 tracking-tight">
-          DTA Studio
+
+        {/* Title */}
+        <h2 className="text-center text-3xl font-black tracking-wider">
+          <span className="bg-gradient-to-r from-white via-cyan-300 to-cyan-500 bg-clip-text text-transparent">
+            DTA MANAGER YT
+          </span>
         </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
+        <p className="mt-2 text-center text-sm text-gray-500 tracking-wide">
           Hệ thống Quản trị MCN / Agency YouTube
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow-xl shadow-slate-200/50 sm:rounded-xl sm:px-10 border border-slate-100">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
-                Địa chỉ Email
-              </label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="h-5 w-5 text-gray-400" />
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+        {/* Login Card with Glassmorphism */}
+        <div className="relative">
+          {/* Border glow effect */}
+          <div className="absolute -inset-[1px] bg-gradient-to-r from-cyan-500/20 via-transparent to-red-500/20 rounded-2xl blur-sm"></div>
+          
+          <div className="relative bg-[#0d1117]/90 backdrop-blur-xl py-10 px-6 sm:rounded-2xl sm:px-10 border border-[#1e232b]">
+            <form className="space-y-6" onSubmit={handleSubmit}>
+              {/* Email Field */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-300 mb-2 tracking-wide">
+                  Địa chỉ Email
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Mail className="h-4 w-4 text-gray-500 group-focus-within:text-cyan-400 transition-colors" />
+                  </div>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="block w-full pl-11 pr-4 py-3 text-sm text-white bg-[#161b22] border border-[#2a3040] rounded-xl focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/50 transition-all duration-300 placeholder:text-gray-600 hover:border-[#3a4050]"
+                    placeholder="name@dtastudio.vn"
+                  />
                 </div>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="block w-full pl-10 sm:text-sm border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 py-3 bg-gray-50 transition-colors"
-                  placeholder="name@dtastudio.vn"
-                />
               </div>
-            </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Mật khẩu
-              </label>
-              <div className="mt-1 relative rounded-md shadow-sm">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-gray-400" />
+              {/* Password Field */}
+              <div>
+                <label htmlFor="password" className="block text-sm font-semibold text-gray-300 mb-2 tracking-wide">
+                  Mật khẩu
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <Lock className="h-4 w-4 text-gray-500 group-focus-within:text-cyan-400 transition-colors" />
+                  </div>
+                  <input
+                    id="password"
+                    name="password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="block w-full pl-11 pr-12 py-3 text-sm text-white bg-[#161b22] border border-[#2a3040] rounded-xl focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/50 transition-all duration-300 placeholder:text-gray-600 hover:border-[#3a4050]"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-cyan-400 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2 border"
-                  placeholder="••••••••"
-                />
+              </div>
+
+              {/* Error Message */}
+              {error && (
+                <div className="text-red-400 text-sm bg-red-500/10 p-3.5 rounded-xl border border-red-500/20 flex items-start">
+                  <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 mr-2.5 shrink-0 animate-pulse"></div>
+                  {error}
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <div>
+                <button
+                  type="submit"
+                  disabled={isVerifying}
+                  className="w-full flex justify-center py-3 px-4 rounded-xl text-sm font-bold text-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden group"
+                  style={{
+                    background: isVerifying ? '#1e232b' : 'linear-gradient(135deg, #0891b2, #06b6d4, #22d3ee)',
+                  }}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+                  <span className="relative z-10 tracking-wide">
+                    {isVerifying ? (
+                      <span className="flex items-center">
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Đang xác thực...
+                      </span>
+                    ) : 'ĐĂNG NHẬP'}
+                  </span>
+                </button>
+              </div>
+            </form>
+
+            {/* Footer */}
+            <div className="mt-8 pt-6 border-t border-[#1e232b]">
+              <p className="text-center text-[11px] text-gray-600 tracking-wide">
+                Phát triển bởi <span className="text-cyan-500/80 font-semibold">DTA Studio</span> — Đức Trường AI
+              </p>
+              <div className="flex justify-center gap-4 mt-2">
+                <a href="https://www.facebook.com/phamductruong17/" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-600 hover:text-cyan-400 transition-colors">Facebook</a>
+                <a href="https://github.com/TruongAnh2706" target="_blank" rel="noopener noreferrer" className="text-[10px] text-gray-600 hover:text-cyan-400 transition-colors">GitHub</a>
+                <a href="mailto:ductruong.onl@gmail.com" className="text-[10px] text-gray-600 hover:text-cyan-400 transition-colors">Liên hệ</a>
               </div>
             </div>
-
-            {error && (
-              <div className="text-red-600 text-sm bg-red-50 p-3 rounded-md border border-red-100">
-                {error}
-              </div>
-            )}
-
-            <div>
-              <button
-                type="submit"
-                disabled={isVerifying}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50"
-              >
-                {isVerifying ? 'Đang truy vấn DDB...' : 'Đăng nhập'}
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       </div>
     </div>

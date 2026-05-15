@@ -245,7 +245,7 @@ function AppContent() {
   const handleExportPayroll = (amount: number) => {
     const today = new Date();
     const newTransaction = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       date: today.toISOString(),
       amount: amount,
       type: 'expense' as const,

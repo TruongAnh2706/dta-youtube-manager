@@ -91,7 +91,7 @@ export function TaskManager({
     setTasks(prev => prev.map(t => {
       if (t.id === taskCommentModal) {
         const newComment = {
-          id: Date.now().toString(),
+          id: crypto.randomUUID(),
           userId: currentUser.id,
           userName: currentUser.name,
           text: newCommentText.trim(),
@@ -302,7 +302,7 @@ export function TaskManager({
     const { today, completedTasksToday, pendingTasksToday } = reportFormMetrics;
 
     const newReport: DailyReport = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       staffId: currentStaff.id,
       date: today,
       renderedCount: completedTasksToday.length, // Backward compatibility
@@ -335,7 +335,7 @@ export function TaskManager({
     }
 
     const newTask: VideoTask = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       title: taskCategory === 'office' ? `[Hành chính] ${taskFormData.title}` : (taskCategory === 'channel' ? `[Quản lý Kênh/Mail] ${taskFormData.title}` : taskFormData.title),
       channelId: taskCategory === 'video' ? (taskFormData.channelId || '') : '', // Việc ngoài kênh ko cần id
       status: 'pending', // Mặc định là pending khi mới tạo
@@ -787,24 +787,34 @@ export function TaskManager({
           </div>
           ) : (
             /* Board View */
-            <div className="flex overflow-x-auto space-x-4 pb-6 items-start min-h-[70vh] custom-scrollbar">
+            <div className="flex overflow-x-auto space-x-6 pb-6 items-start min-h-[75vh] custom-scrollbar px-2">
               {workflowSteps.map(step => {
                 const colTasks = displayedTasks.filter(t => t.status === step.id);
+                // Extract step color or default to gray
+                const stepColorClass = step.color?.includes('text-') ? step.color.split(' ').find(c => c.startsWith('text-'))?.replace('text-', 'bg-') : 'bg-gray-400';
+                
                 return (
                   <div 
                     key={step.id} 
-                    className="bg-gray-100 rounded-xl p-3 w-[min(100%,320px)] shrink-0 border border-gray-200 flex flex-col max-h-[70vh]"
+                    className="bg-[#f3f4f6] rounded-xl w-[min(100%,340px)] shrink-0 border border-gray-200 flex flex-col max-h-[75vh] shadow-sm overflow-hidden"
                     onDragOver={handleDragOver}
                     onDrop={(e) => handleDrop(e, step.id)}
                   >
-                    <div className="flex justify-between items-center mb-3 px-1 sticky top-0 bg-gray-100 z-10 py-1">
-                      <h3 className={`font-bold text-sm ${step.color?.includes('text-') ? step.color.split(' ').find(c => c.startsWith('text-')) : 'text-gray-700'}`}>{step.label}</h3>
-                      <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full text-xs font-bold">{colTasks.length}</span>
+                    {/* Top colored border */}
+                    <div className={`h-1.5 w-full ${stepColorClass || 'bg-gray-400'}`}></div>
+                    
+                    <div className="flex justify-between items-center mb-4 px-4 pt-3 pb-2 sticky top-0 bg-[#f3f4f6] z-10 border-b border-gray-200/50">
+                      <h3 className={`font-bold text-sm tracking-wide uppercase flex items-center ${step.color?.includes('text-') ? step.color.split(' ').find(c => c.startsWith('text-')) : 'text-gray-700'}`}>
+                        <span className={`w-2 h-2 rounded-full mr-2 ${stepColorClass || 'bg-gray-400'}`}></span>
+                        {step.label}
+                      </h3>
+                      <span className="bg-white text-gray-700 px-2.5 py-0.5 rounded-full text-xs font-bold shadow-sm border border-gray-200">{colTasks.length}</span>
                     </div>
-                    <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 pb-2 px-1">
+                    <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 pb-4 px-3">
                       {colTasks.length === 0 ? (
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg h-20 flex items-center justify-center text-xs text-gray-400">
-                          Thả công việc vào đây
+                        <div className="border-2 border-dashed border-gray-300 rounded-xl h-24 flex flex-col items-center justify-center text-xs text-gray-400 bg-white/50">
+                          <Kanban size={24} className="mb-2 text-gray-300" />
+                          <span>Kéo thả công việc vào đây</span>
                         </div>
                       ) : (
                         colTasks.map((task, index) => {
@@ -827,29 +837,41 @@ export function TaskManager({
                               key={task.id} 
                               draggable
                               onDragStart={(e) => handleDragStart(e, task.id)}
-                              className={`p-3 rounded-lg shadow-sm border bg-white cursor-grab hover:shadow-md transition-all active:cursor-grabbing relative overflow-hidden ${overdue ? 'border-red-500 ring-2 ring-red-500/50' : isHighPriority ? 'border-l-4 border-l-red-500' : 'border-gray-200'}`}
+                              className={`p-4 rounded-xl shadow-sm border bg-white cursor-grab hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 active:cursor-grabbing relative group ${overdue ? 'border-red-500 ring-1 ring-red-500' : isHighPriority ? 'border-l-4 border-l-red-500 border-gray-200' : 'border-gray-200'}`}
                             >
                               <div className="flex justify-between items-start mb-2 gap-2">
-                                <h4 className="text-sm font-bold text-gray-900 leading-snug">{pureTitle}</h4>
-                                {overdue && <AlertCircle size={14} className="text-red-500 shrink-0" />}
+                                <h4 className="text-sm font-bold text-gray-900 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">{pureTitle}</h4>
+                                {overdue && <AlertCircle size={16} className="text-red-500 shrink-0" title="Đã quá hạn!" />}
                               </div>
-                              {category && <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded mb-2 uppercase ${overdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{category}</span>}
                               
-                              {/* Khối này đã được dọn sạch do không còn Virtual Grouped Tasks */}
-                              <div className="flex justify-between items-end mt-2">
-                                <div className="flex -space-x-1.5 overflow-hidden">
+                              {category && <span className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded-md mb-3 uppercase ${overdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{category}</span>}
+                              
+                              {/* Meta Info */}
+                              <div className="flex flex-wrap items-center text-[10px] font-medium text-gray-500 mb-3 gap-2">
+                                <span className="flex items-center">
+                                  <Clock size={12} className="mr-1" /> {format(parseISO(task.dueDate), 'dd/MM')}
+                                </span>
+                                {task.linkedAssetIds && task.linkedAssetIds.length > 0 && (
+                                  <span className="flex items-center text-indigo-600 bg-indigo-50 px-1.5 rounded">
+                                    <LinkIcon size={10} className="mr-1" /> {task.linkedAssetIds.length} file
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100">
+                                <div className="flex -space-x-2 overflow-hidden">
                                   {assignedStaffArr.map(s => (
-                                    <div key={s?.id} title={s?.name} className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold border-2 border-white">
+                                    <div key={s?.id} title={s?.name} className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 text-indigo-700 flex items-center justify-center text-[11px] font-bold border-2 border-white shadow-sm">
                                       {s?.name?.charAt(0)}
                                     </div>
                                   ))}
                                   {assignedStaffArr.length === 0 && (
-                                    <div className="w-6 h-6 rounded-full border-2 border-dashed border-gray-300 text-gray-400 flex items-center justify-center text-[10px]">?</div>
+                                    <div className="w-7 h-7 rounded-full border-2 border-dashed border-gray-300 text-gray-400 flex items-center justify-center text-[10px] bg-gray-50" title="Chưa giao ai">?</div>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  <button onClick={() => setTaskCommentModal(task.id)} className="flex items-center text-gray-500 hover:text-blue-600 text-xs bg-gray-50 px-1.5 py-0.5 rounded">
-                                    <MessageSquare size={12} className="mr-1" /> {(task.comments || []).length}
+                                  <button onClick={() => setTaskCommentModal(task.id)} className="flex items-center text-gray-500 hover:text-blue-600 text-xs bg-gray-50 hover:bg-blue-50 px-2 py-1 rounded-md transition-colors font-medium border border-gray-100">
+                                    <MessageSquare size={12} className="mr-1.5" /> {(task.comments || []).length}
                                   </button>
                                 </div>
                               </div>

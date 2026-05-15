@@ -3,10 +3,43 @@ import { supabase, toCamelCase } from '../lib/supabase';
 import {
     Channel, Topic, Staff, SourceChannel, VideoTask, DailyReport,
     FinancialRecord, Transaction, FinancialAccount, TransactionCategory,
-    Strike, Asset, Proxy, License, Competitor, SystemSettings, ManagedEmail
+    Strike, Asset, Proxy, License, Competitor, SystemSettings, ManagedEmail,
+    CustomStatus, StaffRole
 } from '../types';
 
-export function useAppData(currentUser: any) {
+// ========================================
+// HẰNG SỐ MẶC ĐỊNH - Dùng chung, không lặp lại
+// ========================================
+export const DEFAULT_EMAIL_STATUSES: CustomStatus[] = [
+    { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
+    { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
+    { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
+    { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
+    { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
+];
+
+export const DEFAULT_TASK_STATUSES: CustomStatus[] = [
+    { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
+    { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
+    { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
+    { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
+    { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
+];
+
+/** Hàm gán default statuses cho settings nếu chưa có */
+function applyDefaultStatuses(settings: any): any {
+    if (!settings.emailStatuses) settings.emailStatuses = DEFAULT_EMAIL_STATUSES;
+    if (!settings.taskStatuses) settings.taskStatuses = DEFAULT_TASK_STATUSES;
+    return settings;
+}
+
+interface CurrentUserParam {
+    id: string;
+    role: StaffRole;
+    name: string;
+}
+
+export function useAppData(currentUser: CurrentUserParam | null) {
     const [channels, setChannels] = useState<Channel[]>([]);
     const [topics, setTopics] = useState<Topic[]>([]);
     const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -30,22 +63,11 @@ export function useAppData(currentUser: any) {
         youtubeApiKeys: [],
         geminiApiKeys: [],
         activeYoutubeKeyIndex: 0,
+        activeGeminiKeyIndex: 0,
         auditLogs: [],
         trainingDocs: [],
-        emailStatuses: [
-            { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
-            { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
-            { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
-            { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
-            { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
-        ],
-        taskStatuses: [
-            { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
-            { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
-            { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
-            { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
-            { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
-        ]
+        emailStatuses: DEFAULT_EMAIL_STATUSES,
+        taskStatuses: DEFAULT_TASK_STATUSES
     });
 
     // Get active YouTube API Key
@@ -62,7 +84,8 @@ export function useAppData(currentUser: any) {
         const keys = systemSettings?.geminiApiKeys || [];
         const activeKeys = keys.filter(k => k.status === 'active');
         if (activeKeys.length === 0) return '';
-        return activeKeys[0]?.key || '';
+        const index = (systemSettings?.activeGeminiKeyIndex || 0) % activeKeys.length;
+        return activeKeys[index]?.key || '';
     }, [systemSettings]);
 
     // P1.2: Seed admin không bao gồm password (password được quản lý bởi server)
@@ -106,8 +129,30 @@ export function useAppData(currentUser: any) {
         return activeKeys.length > 1;
     }, [systemSettings, setSystemSettings]);
 
-    const handleRemoteUpdate = (tableName: string, payload: any) => {
-        const setMap: any = {
+    const rotateGeminiKey = useCallback(() => {
+        const keys = systemSettings?.geminiApiKeys || [];
+        const activeKeys = keys.filter(k => k.status === 'active');
+        if (activeKeys.length === 0) return false;
+
+        const currentIndex = (systemSettings?.activeGeminiKeyIndex || 0) % activeKeys.length;
+        const failedKeyId = activeKeys[currentIndex].id;
+
+        setSystemSettings(prev => {
+            const updatedKeys = prev.geminiApiKeys.map(k =>
+                k.id === failedKeyId ? { ...k, status: 'quota_exceeded' as const } : k
+            );
+            return {
+                ...prev,
+                geminiApiKeys: updatedKeys,
+                activeGeminiKeyIndex: 0
+            };
+        });
+        return activeKeys.length > 1;
+    }, [systemSettings, setSystemSettings]);
+
+    // P1.3: Wrap trong useCallback để tránh re-subscribe Realtime mỗi render
+    const handleRemoteUpdate = useCallback((tableName: string, payload: any) => {
+        const setMap: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
             'channels': setChannels,
             'topics': setTopics,
             'staff_list': setStaffList,
@@ -127,21 +172,7 @@ export function useAppData(currentUser: any) {
 
         if (tableName === 'system_settings') {
             if (payload && payload.length > 0) {
-                const parsed = payload[0];
-                if (!parsed.emailStatuses) parsed.emailStatuses = [
-                    { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
-                    { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
-                    { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
-                    { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
-                    { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
-                ];
-                if (!parsed.taskStatuses) parsed.taskStatuses = [
-                    { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
-                    { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
-                    { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
-                    { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
-                    { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
-                ];
+                const parsed = applyDefaultStatuses(payload[0]);
                 setSystemSettings(parsed);
             }
             return;
@@ -174,7 +205,7 @@ export function useAppData(currentUser: any) {
             }
             return prev;
         });
-    };
+    }, []); // Các setState từ useState là stable → dependency rỗng an toàn
 
     useEffect(() => {
         if (!currentUser) return;
@@ -203,21 +234,7 @@ export function useAppData(currentUser: any) {
                 ] = await Promise.all(baseQueries);
 
                 if (settingsRes.data && settingsRes.data.length > 0) {
-                    const parsedSettings = toCamelCase(settingsRes.data[0]) as any;
-                    if (!parsedSettings.emailStatuses) parsedSettings.emailStatuses = [
-                        { id: 'new', label: 'Mới lấy về', color: 'bg-gray-100 text-gray-700' },
-                        { id: 'aging', label: 'Đang ngâm', color: 'bg-yellow-100 text-yellow-700' },
-                        { id: 'creating', label: 'Đang lập kênh', color: 'bg-blue-100 text-blue-700' },
-                        { id: 'active', label: 'Đã lập xong kênh', color: 'bg-green-100 text-green-700' },
-                        { id: 'error', label: 'Lỗi/Die', color: 'bg-red-100 text-red-700' }
-                    ];
-                    if (!parsedSettings.taskStatuses) parsedSettings.taskStatuses = [
-                        { id: 'pending', label: 'Chờ nhận việc', color: 'bg-yellow-100 text-yellow-700' },
-                        { id: 'in_progress', label: 'Đang xử lý', color: 'bg-blue-100 text-blue-700' },
-                        { id: 'completed', label: 'Hoàn thành', color: 'bg-green-100 text-green-700' },
-                        { id: 'review', label: 'Chờ duyệt', color: 'bg-purple-100 text-purple-700' },
-                        { id: 'published', label: 'Đã hoàn tất', color: 'bg-gray-100 text-gray-700' }
-                    ];
+                    const parsedSettings = applyDefaultStatuses(toCamelCase(settingsRes.data[0]));
                     setSystemSettings(parsedSettings);
                 }
                 if (staffRes.data) setStaffList(toCamelCase(staffRes.data));

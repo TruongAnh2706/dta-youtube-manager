@@ -63,14 +63,14 @@ export function Analysis({ channels, sourceChannels, topics, geminiApiKey, curre
     }
 
     const newTask: VideoTask = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       title: `[Chiến lược AI] ${taskIdea}`,
       status: 'pending',
       assigneeIds: [assignedStaff],
-      dueDate: new Date().toISOString(),
+      dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // Deadline = ngày mai
       priority: 'high',
-      channelId: channels[0]?.id || '', // Gan tam cho kenh dau tien, hoac bo trong
-      notes: ''
+      channelId: channels[0]?.id || '',
+      notes: `Được tạo tự động từ AI Analysis.\nChủ đề: ${selectedTopic || 'N/A'}\nNgười tạo: ${currentUser?.name || 'system'}\n\nNội dung gốc:\n${taskIdea}`
     };
 
     setTasks(prev => [...prev, newTask]);

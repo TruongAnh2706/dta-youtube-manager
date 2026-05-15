@@ -90,6 +90,8 @@ export type SourceChannel = {
   notes: string;
   allowedStaffIds?: string[]; // Mảng ID của những nhân viên được phép xem, admin mặc định full quyền
   status?: 'active' | 'dead';
+  lastHealthCheck?: string;
+  country?: string;
 };
 
 export type StaffRole = 'admin' | 'manager' | 'leader' | 'member';
@@ -131,7 +133,9 @@ export type Staff = {
   };
 };
 
-export type TaskStatus = string;export type VideoTask = {
+export type TaskStatus = string;
+
+export type VideoTask = {
   id: string;
   title: string;
   channelId: string;
@@ -343,6 +347,7 @@ export type SystemSettings = {
   youtubeApiKeys: ApiKey[];
   geminiApiKeys: ApiKey[];
   activeYoutubeKeyIndex: number;
+  activeGeminiKeyIndex: number;
   auditLogs: AuditLog[];
   trainingDocs: TrainingDoc[];
   emailStatuses?: CustomStatus[];

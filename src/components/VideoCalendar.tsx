@@ -155,7 +155,7 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
       setTasks(prev => prev.map(t => t.id === editingTask.id ? { ...t, ...formData } : t));
       showToast('Đã cập nhật lịch đăng video thành công!', 'success');
     } else {
-      setTasks(prev => [...prev, { id: Date.now().toString(), ...formData }]);
+      setTasks(prev => [...prev, { id: crypto.randomUUID(), ...formData }]);
       showToast('Đã lên lịch đăng video mới thành công!', 'success');
     }
     setIsModalOpen(false);
