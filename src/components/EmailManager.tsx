@@ -4,6 +4,8 @@ import {
   Save, X, FileDown, CheckCircle2, Clock, AlertTriangle, PlayCircle, Eye, EyeOff, Copy, ExternalLink
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 import { ManagedEmail, Staff, Topic, VideoTask, Channel } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
@@ -248,15 +250,60 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     showToast(`Đã xuất ${filteredEmails.length} email ra file Excel`, 'success');
   };
 
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([{
-      'Mã Kênh': 'CD1', 'Email': 'example@gmail.com', 'Mật khẩu': 'pass123', 'Email Khôi Phục': 'recovery@gmail.com',
-      '2FA': 'ABCD 1234 EFGH', 'SĐT Xác minh': '0987654321', 'Trạng thái': 'Đang ngâm', 'Ghi chú': 'Email VN', 'Chủ đề dự kiến': 'Giải Trí, Vlog',
-      'Nhân sự': staffList.length > 0 ? staffList[0].name : 'Tên nhân sự'
-    }]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    XLSX.writeFile(wb, 'Email_Import_Template.xlsx');
+  const downloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Template');
+
+    sheet.columns = [
+      { header: 'Mã Kênh', key: 'channelCode', width: 15 },
+      { header: 'Email', key: 'email', width: 25 },
+      { header: 'Mật khẩu', key: 'password', width: 15 },
+      { header: 'Email Khôi Phục', key: 'recovery', width: 20 },
+      { header: '2FA', key: 'twoFA', width: 20 },
+      { header: 'SĐT Xác minh', key: 'phone', width: 15 },
+      { header: 'Trạng thái', key: 'status', width: 15 },
+      { header: 'Ghi chú', key: 'notes', width: 20 },
+      { header: 'Chủ đề dự kiến', key: 'topic', width: 20 },
+      { header: 'Nhân sự', key: 'staff', width: 25 }
+    ];
+
+    sheet.getRow(1).font = { bold: true };
+
+    sheet.addRow({
+      channelCode: 'CD1',
+      email: 'example@gmail.com',
+      password: 'pass123',
+      recovery: 'recovery@gmail.com',
+      twoFA: 'ABCD 1234 EFGH',
+      phone: '0987654321',
+      status: 'Đang ngâm',
+      notes: 'Email VN',
+      topic: 'Giải Trí, Vlog',
+      staff: staffList.length > 0 ? staffList[0].name : 'Tên nhân sự'
+    });
+
+    const staffNames = staffList.map(s => s.name);
+    if (staffNames.length > 0) {
+      const staffSheet = workbook.addWorksheet('StaffList', { state: 'hidden' });
+      staffNames.forEach((name, idx) => {
+        staffSheet.getCell(`A${idx + 1}`).value = name;
+      });
+
+      for (let i = 2; i <= 1000; i++) {
+        sheet.getCell(`J${i}`).dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [`StaffList!$A$1:$A$${staffNames.length}`],
+          showErrorMessage: true,
+          errorStyle: 'warning',
+          errorTitle: 'Nhân sự không có sẵn',
+          error: 'Vui lòng chọn nhân sự có sẵn trong hệ thống từ danh sách thả xuống.'
+        };
+      }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer]), 'Email_Import_Template.xlsx');
   };
 
   const handleBulkImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
