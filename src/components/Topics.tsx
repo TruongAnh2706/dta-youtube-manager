@@ -86,6 +86,10 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
   };
 
   const handleDelete = async (id: string) => {
+    if (!hasPermission('topics_edit')) {
+      showToast('Bạn không có quyền xóa chủ đề.', 'error');
+      return;
+    }
     if (confirm('Bạn có chắc chắn muốn xóa chủ đề này?')) {
       setTopics(topics.filter(t => t.id !== id));
       
@@ -99,6 +103,10 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
   };
 
   const handleBulkDelete = async () => {
+    if (!hasPermission('topics_edit')) {
+      showToast('Bạn không có quyền xóa chủ đề.', 'error');
+      return;
+    }
     if (confirm(`Bạn có chắc muốn xóa ${selectedIds.length} chủ đề đã chọn?`)) {
       setTopics(topics.filter(t => !selectedIds.includes(t.id)));
       const { error } = await supabase.from('topics').delete().in('id', selectedIds);

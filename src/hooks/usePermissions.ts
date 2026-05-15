@@ -17,11 +17,11 @@ const DEFAULT_PERMISSIONS: RolePermissions = {
     'finance_view', 'finance_edit', 'copyright_view', 'assets_view', 'assets_edit', 'tasks_view', 'tasks_edit', 'tasks_claim', 'settings_view'
   ],
   leader: [
-    'dashboard_view', 'topics_view', 'sources_view', 'channels_view', 'emails_view', 'calendar_view', 'calendar_edit',
+    'dashboard_view', 'topics_view', 'sources_view', 'channels_view', 'emails_view', 'staff_view', 'calendar_view', 'calendar_edit',
     'calendar_view_all', 'copyright_view', 'assets_view', 'tasks_view', 'tasks_edit', 'tasks_claim'
   ],
   member: [
-    'dashboard_view', 'channels_view', 'channels_edit', 'emails_view', 'sources_view', 'calendar_view', 'calendar_edit', 'assets_view', 'tasks_view', 'tasks_claim'
+    'dashboard_view', 'topics_view', 'channels_view', 'emails_view', 'sources_view', 'calendar_view', 'calendar_edit', 'assets_view', 'tasks_view', 'tasks_claim'
   ]
 };
 

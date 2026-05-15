@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Topic, DEFAULT_NICHES, Staff, Channel, SourceChannel } from '../../types';
 import { X, Layers, Info, Globe, Tag, Plus, Target, Users, Clock, RefreshCw, Copy } from 'lucide-react';
 import { fetchYoutubeChannelInfo, sleep } from '../../services/youtube';
+import { usePermissions } from '../../hooks/usePermissions';
 
 interface TopicModalProps {
   isOpen: boolean;
@@ -15,6 +16,8 @@ interface TopicModalProps {
 }
 
 export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList, channels, sourceChannels, youtubeApiKey }: TopicModalProps) {
+  const { hasPermission } = usePermissions();
+  const canEditAssignees = hasPermission('topics_edit');
   const [formData, setFormData] = useState<Omit<Topic, 'id'>>({
     name: '',
     description: '',
@@ -606,16 +609,17 @@ export function TopicModal({ isOpen, onClose, onSubmit, editingTopic, staffList,
               </div>
             </div>
 
-            {/* Phân công nhân sự */}
+            {/* Phân công nhân sự - Chỉ Admin/Manager được sửa */}
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Phân công Nhân sự phụ trách (Assignees)</label>
               <div className="bg-gray-50/50 border border-gray-200 rounded-xl p-4 max-h-[160px] overflow-y-auto">
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
                   {staffList.map((staff) => (
-                    <label key={staff.id} className="flex items-center space-x-3 bg-white p-2 rounded-lg border border-gray-100 cursor-pointer hover:border-blue-300 transition-colors">
+                    <label key={staff.id} className={`flex items-center space-x-3 bg-white p-2 rounded-lg border border-gray-100 ${canEditAssignees ? 'cursor-pointer hover:border-blue-300' : 'cursor-default opacity-60'} transition-colors`}>
                       <input
                         type="checkbox"
                         checked={(formData.assignees || []).includes(staff.id)}
+                        disabled={!canEditAssignees}
                         onChange={(e) => {
                           const newAssignees = e.target.checked
                             ? [...(formData.assignees || []), staff.id]

@@ -115,8 +115,18 @@ function AppContent() {
 
   const viewableSourceChannels = React.useMemo(() => {
     if (isFullAccess) return sourceChannels || [];
-    return (sourceChannels || []).filter(c => c.allowedStaffIds?.includes(currentStaff?.id || ''));
-  }, [sourceChannels, isFullAccess, currentStaff]);
+    const staffId = currentStaff?.id || '';
+    // Lấy tất cả topicIds mà nhân sự này được assign
+    const assignedTopicIds = new Set(
+      (topics || []).filter(t => (t.assignees || []).includes(staffId)).map(t => t.id)
+    );
+    return (sourceChannels || []).filter(c =>
+      // Cho phép trực tiếp qua allowedStaffIds
+      c.allowedStaffIds?.includes(staffId) ||
+      // HOẶC kênh nguồn thuộc topic mà nhân sự được giao phụ trách
+      (c.topicIds || []).some(tid => assignedTopicIds.has(tid))
+    );
+  }, [sourceChannels, isFullAccess, currentStaff, topics]);
 
   const viewableCompetitors = React.useMemo(() => {
     if (isFullAccess) return competitors || [];
