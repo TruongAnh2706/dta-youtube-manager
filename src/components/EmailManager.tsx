@@ -251,20 +251,21 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
   const downloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([{
       'Mã Kênh': 'CD1', 'Email': 'example@gmail.com', 'Mật khẩu': 'pass123', 'Email Khôi Phục': 'recovery@gmail.com',
-      '2FA': 'ABCD 1234 EFGH', 'SĐT Xác minh': '0987654321', 'Trạng thái': 'Đang ngâm', 'Ghi chú': 'Email VN', 'Chủ đề dự kiến': 'Giải Trí, Vlog'
+      '2FA': 'ABCD 1234 EFGH', 'SĐT Xác minh': '0987654321', 'Trạng thái': 'Đang ngâm', 'Ghi chú': 'Email VN', 'Chủ đề dự kiến': 'Giải Trí, Vlog',
+      'Nhân sự': staffList.length > 0 ? staffList[0].name : 'Tên nhân sự'
     }]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
     XLSX.writeFile(wb, 'Email_Import_Template.xlsx');
   };
 
-  const handleBulkImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleBulkImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsBulkImporting(true);
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: 'binary' });
@@ -274,18 +275,20 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
 
         let addedCount = 0;
         let skipCount = 0;
+        let errorCount = 0;
         const newEmails: ManagedEmail[] = [];
+        const newTasks: VideoTask[] = [];
 
-        data.forEach((row) => {
+        for (const row of data) {
           const emailStr = (row['Email'] || '').trim();
-          if (!emailStr) return;
+          if (!emailStr) continue;
 
           const isExist = emails.some(e => e.email.toLowerCase() === emailStr.toLowerCase()) || 
                           newEmails.some(e => e.email.toLowerCase() === emailStr.toLowerCase());
           
           if (isExist) {
             skipCount++;
-            return;
+            continue;
           }
 
           let topicIds: string[] = [];
@@ -300,9 +303,21 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
           const matchedStatus = systemSettings?.emailStatuses?.find(s => rawStatus.includes(s.label.toLowerCase()) || rawStatus === s.id.toLowerCase());
           if (matchedStatus) statusVal = matchedStatus.id;
 
-          newEmails.push({
-            id: `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            channelCode: String(row['Mã Kênh'] || '').trim(),
+          let assignedStaffId = null;
+          if (row['Nhân sự']) {
+            const staffName = String(row['Nhân sự']).trim().toLowerCase();
+            const staffMatch = staffList.find(s => s.name.toLowerCase() === staffName);
+            if (staffMatch) {
+              assignedStaffId = staffMatch.id;
+            }
+          }
+
+          const newEmailId = `email_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const channelCodeStr = String(row['Mã Kênh'] || '').trim();
+
+          const newEmail: ManagedEmail = {
+            id: newEmailId,
+            channelCode: channelCodeStr,
             email: emailStr,
             password: String(row['Mật khẩu'] || ''),
             recoveryEmail: String(row['Email Khôi Phục'] || ''),
@@ -311,15 +326,71 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
             notes: String(row['Ghi chú'] || ''),
             status: statusVal,
             targetTopicIds: topicIds,
+            assignedTo: assignedStaffId,
             createdAt: new Date().toISOString()
-          });
+          };
+          
+          // Tạo Task nếu có gán nhân sự
+          if (assignedStaffId) {
+            newTasks.push({
+              id: crypto.randomUUID(),
+              title: `[Khởi tạo kênh] Email: ${emailStr}`,
+              channelId: newEmailId,
+              status: 'pending',
+              assigneeIds: [assignedStaffId],
+              dueDate: new Date().toISOString().split('T')[0],
+              videoType: 'long',
+              priority: 'medium',
+              notes: `Tiến hành ngâm và lập kênh cho email: ${emailStr}\nXem thông tin chi tiết tại tab Quản lý Email.\nKênh dự kiến: ${channelCodeStr}`,
+              isClaimable: false
+            });
+          }
+
+          // Direct upsert vào Supabase
+          try {
+            const dbPayload = {
+              id: newEmail.id,
+              channel_code: newEmail.channelCode,
+              email: newEmail.email,
+              password: newEmail.password,
+              recovery_email: newEmail.recoveryEmail,
+              two_factor_auth: newEmail.twoFactorAuth,
+              verification_phone: newEmail.verificationPhone,
+              assigned_to: newEmail.assignedTo,
+              status: newEmail.status,
+              notes: newEmail.notes,
+              target_topic_ids: newEmail.targetTopicIds,
+              created_at: newEmail.createdAt
+            };
+            const { error } = await supabase.from('managed_emails').upsert(dbPayload, { onConflict: 'id' });
+            if (error) {
+              console.error(`❌ Lỗi lưu email "${newEmail.email}":`, error.message);
+              errorCount++;
+              continue;
+            }
+          } catch (dbErr) {
+            console.error(`❌ Lỗi DB email "${newEmail.email}":`, dbErr);
+            errorCount++;
+            continue;
+          }
+
+          newEmails.push(newEmail);
           addedCount++;
-        });
+        }
 
         if (newEmails.length > 0) {
           setEmails(prev => [...newEmails, ...prev]);
         }
-        showToast(`Nhập xong! Đã thêm ${addedCount} email. Bỏ qua ${skipCount} trùng lặp.`, 'success');
+        if (newTasks.length > 0 && setTasks) {
+          setTasks(prev => [...prev, ...newTasks]);
+        }
+
+        let message = `Nhập hoàn tất: Đã thêm ${addedCount} email.`;
+        if (skipCount > 0) message += ` (Bỏ qua ${skipCount} trùng lặp)`;
+        if (errorCount > 0) message += ` (${errorCount} lỗi DB)`;
+        if (newTasks.length > 0) message += ` Đã giao việc cho ${newTasks.length} nhân sự.`;
+        
+        showToast(message, addedCount > 0 ? 'success' : 'info');
       } catch (error) {
         console.error(error);
         showToast('Lỗi khi đọc file Excel', 'error');
