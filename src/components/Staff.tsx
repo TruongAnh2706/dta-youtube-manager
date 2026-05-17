@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Staff, Channel, StaffRole, StaffSkill, VideoTask } from '../types';
 import { Plus, Edit2, Trash2, X, UserCircle, Mail, Phone, Circle, Award, CheckSquare, DollarSign, Calculator, ShieldAlert, RefreshCw, Calendar, Clock, BarChart3 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
+import { createClient } from '@supabase/supabase-js';
 import { supabase, toSnakeCase, toCamelCase } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
@@ -106,84 +107,95 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
     e.preventDefault();
     try {
       setIsSubmitting(true);
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
       if (editingStaff) {
-        // CẬP NHẬT nhân sự qua API
-        const updatedData = { ...formData, id: editingStaff.id };
-        delete updatedData.password; // Mật khẩu được đổi qua endpoint riêng
+        // CẬP NHẬT nhân sự trực tiếp qua Supabase
+        const updatedData = { ...formData };
+        // Không đổi mật khẩu được từ frontend mà không có service_role key, nên xoá đi
+        delete updatedData.password;
+        
+        const safeData = toSnakeCase(updatedData);
+        delete safeData.id;
 
-        const res = await fetch(`${API_BASE_URL}/api/staff/update`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updatedData)
-        });
-        const result = await res.json();
+        const { error: updateError } = await supabase
+          .from('staff_list')
+          .update(safeData)
+          .eq('id', editingStaff.id);
 
-        if (!res.ok) {
-          throw new Error(result.error || 'Lỗi cập nhật nhân sự');
+        if (updateError) {
+          throw new Error(updateError.message);
         }
-
-        // Cập nhật state local
-        setStaffList(staffList.map(s => s.id === editingStaff.id ? { ...s, ...result.staff } : s));
+        
+        const stateUpdate = { ...updatedData };
+        delete stateUpdate.password;
+        setStaffList(staffList.map(s => s.id === editingStaff.id ? { ...s, ...stateUpdate } : s));
         showToast('Đã cập nhật thông tin nhân sự thành công!', 'success');
-
-        // Cập nhật mật khẩu nếu có nhập
-        if (formData.password && formData.password.trim() !== '') {
-          const passRes = await fetch(`${API_BASE_URL}/api/staff/update-password`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              staffId: editingStaff.id,
-              newPassword: formData.password.trim(),
-              email: formData.email.trim()
-            })
-          });
-          const passResult = await passRes.json();
-          if (!passRes.ok) {
-            showToast(`Đã lưu thông tin, nhưng lỗi đổi mật khẩu: ${passResult.error}`, 'error');
-          } else {
-            showToast('Đã cập nhật mật khẩu mới thành công.', 'success');
-          }
-        }
       } else {
-        // TẠO MỚI nhân sự qua API
+        // TẠO MỚI nhân sự: Tạo Auth Account + Insert vào staff_list
+        const newStaffId = crypto.randomUUID();
+        
         if (!formData.email || formData.email.trim() === '') {
             throw new Error('Bạn bắt buộc phải nhập Email cho nhân sự');
         }
-        
         const finalEmail = formData.email.trim();
-        const autoUsername = finalEmail.split('@')[0].toLowerCase();
         
         const passwordToUse = formData.password && formData.password.trim() !== '' 
             ? formData.password.trim() 
             : 'Dta@2026';
-            
+        
         if (passwordToUse.length < 6) {
             throw new Error('Mật khẩu phải có ít nhất 6 ký tự.');
         }
 
-        const payload = {
-            ...formData,
-            email: finalEmail,
-            username: autoUsername,
-            password: passwordToUse
-        };
+        // TẠO TEMP CLIENT ĐỂ KHÔNG BỊ VĂNG TÀI KHOẢN ADMIN HIỆN TẠI
+        const tempClient = createClient(
+          import.meta.env.VITE_SUPABASE_URL || '',
+          import.meta.env.VITE_SUPABASE_ANON_KEY || '',
+          { auth: { persistSession: false, autoRefreshToken: false } }
+        );
 
-        const res = await fetch(`${API_BASE_URL}/api/staff/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+        const { data: authData, error: authError } = await tempClient.auth.signUp({
+          email: finalEmail,
+          password: passwordToUse,
+          options: {
+              data: { name: formData.name },
+              emailRedirectTo: window.location.origin + import.meta.env.BASE_URL
+          }
         });
-
-        const result = await res.json();
-
-        if (!res.ok) {
-          throw new Error(result.error || 'Lỗi tạo nhân sự');
+        
+        if (authError) {
+            throw new Error(`Lỗi tạo Auth: ${authError.message}`);
         }
 
-        setStaffList([...staffList, result.staff]);
-        showToast(`Đã thêm nhân sự mới thành công! Mật khẩu là: ${passwordToUse}`, 'success');
+        // Dùng `supabase` chính (đang giữ phiên Admin) để Insert vào DB
+        const autoUsername = finalEmail.split('@')[0].toLowerCase();
+        const dbPayload = toSnakeCase({
+            id: newStaffId,
+            ...formData,
+            username: autoUsername,
+            email: finalEmail,
+        });
+        dbPayload.password = 'Managed by Supabase Auth';
+
+        const { data, error } = await supabase
+          .from('staff_list')
+          .insert(dbPayload)
+          .select()
+          .single();
+        
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        setStaffList([...staffList, toCamelCase(data)]);
+        
+        // Thông báo
+        const isConfirmRequired = authData.user && !authData.session;
+        if (isConfirmRequired) {
+            showToast(`Đã thêm nhân sự! Email xác nhận đã gửi tới ${finalEmail}. Nhân sự cần xác nhận email.`, 'success', 8000);
+        } else {
+            showToast(`Đã thêm nhân sự mới thành công! Mật khẩu là: ${passwordToUse}`, 'success');
+        }
       }
       handleCloseModal();
     } catch (err: any) {
@@ -196,18 +208,10 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
   const handleDelete = async (id: string) => {
     if (confirm('Lưu ý: Bạn xóa nhân sự này sẽ không thể khôi phục. Chắc chắn?')) {
       try {
-        const staff = staffList.find(s => s.id === id);
-        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-        
-        const res = await fetch(`${API_BASE_URL}/api/staff/delete`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, email: staff?.email })
-        });
-        
-        const result = await res.json();
-        if (!res.ok) {
-           throw new Error(result.error || 'Lỗi xóa nhân sự');
+        const { error } = await supabase.from('staff_list').delete().eq('id', id);
+        if (error) {
+           showToast(`Lỗi xóa nhân sự: ${error.message}`, 'error');
+           return;
         }
 
         setStaffList(prev => prev.filter(s => s.id !== id));
