@@ -3,7 +3,7 @@ import { Staff, Channel, StaffRole, StaffSkill, VideoTask } from '../types';
 import { Plus, Edit2, Trash2, X, UserCircle, Mail, Phone, Circle, Award, CheckSquare, DollarSign, Calculator, ShieldAlert, RefreshCw, Calendar, Clock, BarChart3 } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { createClient } from '@supabase/supabase-js';
-import { supabase, toSnakeCase, toCamelCase } from '../lib/supabase';
+import { supabase, supabaseUrl, supabaseAnonKey, toSnakeCase, toCamelCase } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval, parseISO } from 'date-fns';
@@ -147,55 +147,28 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
             throw new Error('Mật khẩu phải có ít nhất 6 ký tự.');
         }
 
-        // TẠO TEMP CLIENT ĐỂ KHÔNG BỊ VĂNG TÀI KHOẢN ADMIN HIỆN TẠI
-        const tempClient = createClient(
-          import.meta.env.VITE_SUPABASE_URL || '',
-          import.meta.env.VITE_SUPABASE_ANON_KEY || '',
-          { auth: { persistSession: false, autoRefreshToken: false } }
-        );
-
-        const { data: authData, error: authError } = await tempClient.auth.signUp({
-          email: finalEmail,
-          password: passwordToUse,
-          options: {
-              data: { name: formData.name },
-              emailRedirectTo: window.location.origin + import.meta.env.BASE_URL
-          }
-        });
-        
-        if (authError) {
-            throw new Error(`Lỗi tạo Auth: ${authError.message}`);
-        }
-
-        // Dùng `supabase` chính (đang giữ phiên Admin) để Insert vào DB
         const autoUsername = finalEmail.split('@')[0].toLowerCase();
-        const dbPayload = toSnakeCase({
-            id: newStaffId,
-            ...formData,
-            username: autoUsername,
-            email: finalEmail,
+        
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${API_BASE_URL}/api/staff/create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ...formData,
+                email: finalEmail,
+                password: passwordToUse,
+                username: autoUsername
+            })
         });
-        dbPayload.password = 'Managed by Supabase Auth';
 
-        const { data, error } = await supabase
-          .from('staff_list')
-          .insert(dbPayload)
-          .select()
-          .single();
+        const result = await response.json();
         
-        if (error) {
-            throw new Error(error.message);
+        if (!response.ok) {
+            throw new Error(result.error || 'Lỗi khi tạo nhân sự từ máy chủ');
         }
 
-        setStaffList([...staffList, toCamelCase(data)]);
-        
-        // Thông báo
-        const isConfirmRequired = authData.user && !authData.session;
-        if (isConfirmRequired) {
-            showToast(`Đã thêm nhân sự! Email xác nhận đã gửi tới ${finalEmail}. Nhân sự cần xác nhận email.`, 'success', 8000);
-        } else {
-            showToast(`Đã thêm nhân sự mới thành công! Mật khẩu là: ${passwordToUse}`, 'success');
-        }
+        setStaffList([...staffList, result.staff]);
+        showToast(`Đã thêm nhân sự mới thành công! Mật khẩu là: ${passwordToUse}`, 'success');
       }
       handleCloseModal();
     } catch (err: any) {
