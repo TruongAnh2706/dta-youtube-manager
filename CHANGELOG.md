@@ -4,9 +4,11 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
-## [1.0.1] - 2026-05-18
+## [1.0.2] - 2026-05-18
 ### 🐛 Sửa lỗi (Bug Fixes)
 - **Kênh Nguồn (Source Channels):** Sửa lỗi mất dữ liệu phân quyền nhân sự khi reload trang (F5). Bổ sung schema `status` và `last_health_check` cho bảng `source_channels` để khắc phục lỗi Crash lúc AutoSave đẩy dữ liệu lên Supabase.
+- **Kênh Nguồn - Thao tác hàng loạt (Bulk Actions):** Khắc phục lỗi dữ liệu không được lưu lên Database đối với các tính năng *Gắn Chủ đề, Phân Quyền Xem, Thu hồi Quyền, Đổi Trạng thái*. Chuyển đổi từ việc lưu state ảo sang đồng bộ trực tiếp lên Supabase.
+- **Kênh Nguồn - Giao Task:** Hoàn thiện tính năng Giao Task hàng loạt cho các kênh nguồn. Công việc mới tạo sẽ được chuyển chuẩn format và lưu thẳng vào bảng `video_tasks` trong Database.
 
 ## [1.0.0] - 2026-05-18
 ### 🚀 Tính năng mới (Features)

@@ -115,19 +115,31 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     }
   };
 
-  const handleBulkAssignTopicSubmit = () => {
+  const handleBulkAssignTopicSubmit = async () => {
     setSourceChannels(prev => prev.map(c => {
       if (selectedIds.includes(c.id)) {
         return { ...c, topicIds: Array.from(new Set([...(c.topicIds || []), ...bulkActionTopicIds])) };
       }
       return c;
     }));
-    showToast(`Đã cập nhật chủ đề cho ${selectedIds.length} kênh.`, 'success');
+    
+    try {
+      const updates = selectedIds.map(id => {
+        const channel = sourceChannels.find(c => c.id === id);
+        const newTopics = Array.from(new Set([...(channel?.topicIds || []), ...bulkActionTopicIds]));
+        return supabase.from('source_channels').update({ topic_ids: newTopics }).eq('id', id);
+      });
+      await Promise.all(updates);
+      showToast(`Đã cập nhật chủ đề cho ${selectedIds.length} kênh.`, 'success');
+    } catch (err: any) {
+      showToast(`Lỗi khi cập nhật CSDL: ${err.message}`, 'error');
+    }
+
     setIsBulkTopicModalOpen(false);
     setSelectedIds([]);
   };
 
-  const handleBulkAssignStaffSubmit = () => {
+  const handleBulkAssignStaffSubmit = async () => {
     setSourceChannels(prev => prev.map(c => {
       if (selectedIds.includes(c.id)) {
         return { ...c, allowedStaffIds: Array.from(new Set([...(c.allowedStaffIds || []), ...bulkActionStaffIds])) };
@@ -138,12 +150,23 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     // NOTE: Tính năng auto giao việc đã được tách ra để tránh SPAM bảng Task.
     // Nếu cần giao việc, admin sẽ thao tác ở 1 chức năng riêng biệt.
 
-    showToast(`Đã cập nhật quyền xem cho ${selectedIds.length} kênh đối thủ.`, 'success');
+    try {
+      const updates = selectedIds.map(id => {
+        const channel = sourceChannels.find(c => c.id === id);
+        const newStaffIds = Array.from(new Set([...(channel?.allowedStaffIds || []), ...bulkActionStaffIds]));
+        return supabase.from('source_channels').update({ allowed_staff_ids: newStaffIds }).eq('id', id);
+      });
+      await Promise.all(updates);
+      showToast(`Đã cập nhật quyền xem cho ${selectedIds.length} kênh đối thủ.`, 'success');
+    } catch (err: any) {
+      showToast(`Lỗi khi cập nhật CSDL: ${err.message}`, 'error');
+    }
+
     setIsBulkStaffModalOpen(false);
     setSelectedIds([]);
   };
 
-  const handleBulkRemoveStaffSubmit = () => {
+  const handleBulkRemoveStaffSubmit = async () => {
     if (confirm(`Bạn có chắc chắn muốn thu hồi quyền xem của TẤT CẢ nhân sự khỏi ${selectedIds.length} kênh nguồn đã chọn?`)) {
       setSourceChannels(prev => prev.map(c => {
         if (selectedIds.includes(c.id)) {
@@ -151,7 +174,15 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
         }
         return c;
       }));
-      showToast(`Đã thu hồi toàn bộ quyền xem gốc cho ${selectedIds.length} kênh nguồn.`, 'info');
+      
+      try {
+        const updates = selectedIds.map(id => supabase.from('source_channels').update({ allowed_staff_ids: [] }).eq('id', id));
+        await Promise.all(updates);
+        showToast(`Đã thu hồi toàn bộ quyền xem gốc cho ${selectedIds.length} kênh nguồn.`, 'info');
+      } catch (err: any) {
+        showToast(`Lỗi khi cập nhật CSDL: ${err.message}`, 'error');
+      }
+
       setSelectedIds([]);
     }
   };
@@ -170,7 +201,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     setIsAssignTaskModalOpen(true);
   };
 
-  const handleCreateTaskSubmit = () => {
+  const handleCreateTaskSubmit = async () => {
     if (!assignTaskFormData.assigneeId || !assignTaskFormData.title) {
       showToast('Vui lòng điền đủ Tiêu đề và Người thực hiện.', 'error');
       return;
@@ -195,7 +226,31 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
        };
     });
     setTasks(prev => [...newTasks, ...prev]);
-    showToast(`Đã tạo thành công ${newTasks.length} Task Khai thác kênh!`, 'success');
+
+    try {
+      const dbTasks = newTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          status: t.status,
+          assignee_ids: t.assigneeIds,
+          creator_id: t.creatorId,
+          created_at: t.createdAt,
+          updated_at: t.updatedAt,
+          due_date: t.dueDate,
+          tags: t.tags,
+          priority: t.priority,
+          project_type: t.projectType,
+          channel_id: t.channelId,
+          notes: t.notes
+      }));
+      const { error } = await supabase.from('video_tasks').insert(dbTasks);
+      if (error) throw error;
+      showToast(`Đã tạo thành công ${newTasks.length} Task Khai thác kênh!`, 'success');
+    } catch (err: any) {
+      showToast(`Lỗi khi tạo Task trên DB: ${err.message}`, 'error');
+    }
+
     setIsAssignTaskModalOpen(false);
     setAssignTaskChannelIds([]);
     setSelectedIds([]);
@@ -934,9 +989,15 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
     }
   };
 
-  const handleBulkStatusChange = (newStatus: 'active' | 'dead') => {
+  const handleBulkStatusChange = async (newStatus: 'active' | 'dead') => {
     setSourceChannels(prev => prev.map(c => selectedIds.includes(c.id) ? { ...c, status: newStatus } : c));
-    showToast(`Đã cập nhật trạng thái ${selectedIds.length} kênh thành ${newStatus}`, 'success');
+    try {
+      const { error } = await supabase.from('source_channels').update({ status: newStatus }).in('id', selectedIds);
+      if (error) throw error;
+      showToast(`Đã cập nhật trạng thái ${selectedIds.length} kênh thành ${newStatus}`, 'success');
+    } catch (err: any) {
+      showToast(`Lỗi cập nhật CSDL: ${err.message}`, 'error');
+    }
     setSelectedIds([]);
   };
 
@@ -1356,14 +1417,20 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                       <select
                         className="w-full text-xs border border-gray-200 rounded px-2 py-1 bg-gray-50 focus:ring-1 focus:ring-orange-500 hover:bg-white"
                         value=""
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const val = e.target.value;
                           if (!val) return;
                           const currentArr = channel.allowedStaffIds || [];
                           if (!currentArr.includes(val)) {
                             const newArr = [...currentArr, val];
                             setSourceChannels(prev => prev.map(c => c.id === channel.id ? { ...c, allowedStaffIds: newArr } : c));
-                            showToast('Đã thêm nhân viên vào danh sách Share kênh', 'success');
+                            try {
+                                const { error } = await supabase.from('source_channels').update({ allowed_staff_ids: newArr }).eq('id', channel.id);
+                                if (error) throw error;
+                                showToast('Đã thêm nhân viên vào danh sách Share kênh', 'success');
+                            } catch (err: any) {
+                                showToast(`Lỗi cập nhật quyền: ${err.message}`, 'error');
+                            }
                           }
                         }}
                       >
@@ -1387,6 +1454,9 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                                 <button onClick={() => {
                                   const newArr = channel.allowedStaffIds!.filter(id => id !== stId);
                                   setSourceChannels(prev => prev.map(c => c.id === channel.id ? { ...c, allowedStaffIds: newArr } : c));
+                                  supabase.from('source_channels').update({ allowed_staff_ids: newArr }).eq('id', channel.id).then(({error}) => {
+                                      if (error) showToast(`Lỗi xóa quyền: ${error.message}`, 'error');
+                                  });
                                 }} className="ml-1 hover:text-red-500"><X size={10} /></button>
                               </span>
                             );

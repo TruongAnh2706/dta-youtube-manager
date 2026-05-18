@@ -355,7 +355,7 @@ function AppContent() {
             <div className="mb-3 flex justify-between items-center text-[10px] text-gray-500 font-mono border-b border-gray-800 pb-2">
               <span className="flex items-center gap-1">
                 <Sparkles size={10} className="text-blue-400" />
-                {`v${import.meta.env.VITE_APP_VERSION || '1.0.1'}`}
+                {`v${import.meta.env.VITE_APP_VERSION || '1.0.2'}`}
               </span>
               <span>{import.meta.env.VITE_APP_BUILD_DATE || new Date().toLocaleDateString('vi-VN')}</span>
             </div>
