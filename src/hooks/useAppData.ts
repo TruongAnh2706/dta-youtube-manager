@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useToast } from './useToast';
 import { supabase, toCamelCase } from '../lib/supabase';
 import {
     Channel, Topic, Staff, SourceChannel, VideoTask, DailyReport,
@@ -40,6 +41,7 @@ interface CurrentUserParam {
 }
 
 export function useAppData(currentUser: CurrentUserParam | null) {
+    const { showToast } = useToast();
     const [channels, setChannels] = useState<Channel[]>([]);
     const [topics, setTopics] = useState<Topic[]>([]);
     const [staffList, setStaffList] = useState<Staff[]>([]);
@@ -193,11 +195,23 @@ export function useAppData(currentUser: CurrentUserParam | null) {
         setter((prev: any[]) => {
             if (eventType === 'INSERT') {
                 const newItem = toCamelCase(newRow);
+                
+                // Notification (P2-11)
+                if (tableName === 'video_tasks' && currentUser && newItem.assigneeIds?.includes(currentUser.id)) {
+                    showToast('Bạn vừa được giao một công việc mới!', 'info');
+                }
+                
                 if (prev.some(item => item.id === newItem.id)) return prev;
                 return [...prev, newItem];
             }
             if (eventType === 'UPDATE') {
                 const updatedItem = toCamelCase(newRow);
+                
+                // Notification (P2-11)
+                if (tableName === 'staff_list' && currentUser && updatedItem.id === currentUser.id) {
+                    showToast('Thông tin hồ sơ hoặc phân quyền của bạn vừa được cập nhật!', 'info');
+                }
+                
                 return prev.map(item => item.id === updatedItem.id ? updatedItem : item);
             }
             if (eventType === 'DELETE') {
@@ -205,7 +219,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
             }
             return prev;
         });
-    }, []); // Các setState từ useState là stable → dependency rỗng an toàn
+    }, [currentUser, showToast]); // Added dependencies cho Notification
 
     useEffect(() => {
         if (!currentUser) return;

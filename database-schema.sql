@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS topics (
   competition_level TEXT,
   niche TEXT,
   default_schedules JSONB DEFAULT '[]'::jsonb,
+  assignees TEXT[] DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -72,7 +73,7 @@ CREATE TABLE IF NOT EXISTS channels (
   subscribers INTEGER DEFAULT 0,
   total_views BIGINT DEFAULT 0,
   topic_ids TEXT[] DEFAULT '{}',
-  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended', 'dead')),
   health_status TEXT DEFAULT 'healthy' CHECK (health_status IN ('healthy', 'warning', 'danger')),
   health_notes TEXT,
   last_health_check TIMESTAMP WITH TIME ZONE,
@@ -126,6 +127,7 @@ CREATE TABLE IF NOT EXISTS competitors (
   last_video_date TIMESTAMP WITH TIME ZONE,
   notes TEXT,
   topic_ids TEXT[] DEFAULT '{}',
+  allowed_staff_ids TEXT[] DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -135,7 +137,7 @@ CREATE TABLE IF NOT EXISTS video_tasks (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   channel_id TEXT,
-  status TEXT NOT NULL CHECK (status IN ('pending', 'in_progress', 'completed', 'idea', 'script', 'voiceover', 'editing', 'review', 'published')),
+  status TEXT NOT NULL,
   assignee_ids TEXT[] DEFAULT '{}',
   due_date TEXT,
   publish_time TEXT,
@@ -278,6 +280,8 @@ CREATE TABLE IF NOT EXISTS managed_emails (
   verification_phone TEXT,
   assigned_to TEXT REFERENCES staff_list(id) ON DELETE SET NULL,
   notes TEXT,
+  status TEXT DEFAULT 'active',
+  target_topic_ids TEXT[] DEFAULT '{}',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 import { supabase } from '../lib/supabase';
 
@@ -13,6 +13,8 @@ export function Login({ onLogin }: LoginProps) {
   const [error, setError] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +65,35 @@ export function Login({ onLogin }: LoginProps) {
     }
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setResetMessage('');
+
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setError('Vui lòng nhập Email để khôi phục mật khẩu.');
+      return;
+    }
+
+    setIsVerifying(true);
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo: window.location.origin,
+      });
+
+      if (resetError) {
+        setError(`Lỗi: ${resetError.message}`);
+      } else {
+        setResetMessage('Đã gửi liên kết khôi phục. Vui lòng kiểm tra hộp thư email của bạn.');
+      }
+    } catch (err: any) {
+      setError('Lỗi kết nối: ' + err.message);
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#070a10] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
       {/* Animated Background Effects */}
@@ -108,7 +139,7 @@ export function Login({ onLogin }: LoginProps) {
           <div className="absolute -inset-[1px] bg-gradient-to-r from-cyan-500/20 via-transparent to-red-500/20 rounded-2xl blur-sm"></div>
           
           <div className="relative bg-[#0d1117]/90 backdrop-blur-xl py-10 px-6 sm:rounded-2xl sm:px-10 border border-[#1e232b]">
-            <form className="space-y-6" onSubmit={handleSubmit}>
+            <form className="space-y-6" onSubmit={isForgotPassword ? handleResetPassword : handleSubmit}>
               {/* Email Field */}
               <div>
                 <label className="block text-sm font-semibold text-gray-300 mb-2 tracking-wide">
@@ -129,40 +160,63 @@ export function Login({ onLogin }: LoginProps) {
                 </div>
               </div>
 
-              {/* Password Field */}
-              <div>
-                <label htmlFor="password" className="block text-sm font-semibold text-gray-300 mb-2 tracking-wide">
-                  Mật khẩu
-                </label>
-                <div className="relative group">
-                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Lock className="h-4 w-4 text-gray-500 group-focus-within:text-cyan-400 transition-colors" />
+              {/* Password Field (Only show in Login mode) */}
+              {!isForgotPassword && (
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <label htmlFor="password" className="block text-sm font-semibold text-gray-300 tracking-wide">
+                      Mật khẩu
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsForgotPassword(true);
+                        setError('');
+                        setResetMessage('');
+                      }}
+                      className="text-xs text-cyan-500 hover:text-cyan-400 font-medium transition-colors"
+                    >
+                      Quên mật khẩu?
+                    </button>
                   </div>
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full pl-11 pr-12 py-3 text-sm text-white bg-[#161b22] border border-[#2a3040] rounded-xl focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/50 transition-all duration-300 placeholder:text-gray-600 hover:border-[#3a4050]"
-                    placeholder="••••••••"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-cyan-400 transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                      <Lock className="h-4 w-4 text-gray-500 group-focus-within:text-cyan-400 transition-colors" />
+                    </div>
+                    <input
+                      id="password"
+                      name="password"
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="block w-full pl-11 pr-12 py-3 text-sm text-white bg-[#161b22] border border-[#2a3040] rounded-xl focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/50 transition-all duration-300 placeholder:text-gray-600 hover:border-[#3a4050]"
+                      placeholder="••••••••"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-cyan-400 transition-colors"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Error Message */}
               {error && (
                 <div className="text-red-400 text-sm bg-red-500/10 p-3.5 rounded-xl border border-red-500/20 flex items-start">
                   <div className="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 mr-2.5 shrink-0 animate-pulse"></div>
                   {error}
+                </div>
+              )}
+
+              {/* Success Message for Reset Password */}
+              {resetMessage && (
+                <div className="text-cyan-400 text-sm bg-cyan-500/10 p-3.5 rounded-xl border border-cyan-500/20 flex items-start">
+                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 mt-1.5 mr-2.5 shrink-0 animate-pulse"></div>
+                  {resetMessage}
                 </div>
               )}
 
@@ -184,12 +238,29 @@ export function Login({ onLogin }: LoginProps) {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        Đang xác thực...
+                        Đang xử lý...
                       </span>
-                    ) : 'ĐĂNG NHẬP'}
+                    ) : (isForgotPassword ? 'GỬI LINK KHÔI PHỤC' : 'ĐĂNG NHẬP')}
                   </span>
                 </button>
               </div>
+              
+              {/* Back to login button */}
+              {isForgotPassword && (
+                <div className="text-center mt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(false);
+                      setError('');
+                      setResetMessage('');
+                    }}
+                    className="text-sm flex items-center justify-center w-full text-gray-400 hover:text-white transition-colors"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" /> Quay lại đăng nhập
+                  </button>
+                </div>
+              )}
             </form>
 
             {/* Footer */}

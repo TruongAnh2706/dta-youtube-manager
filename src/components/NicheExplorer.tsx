@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Compass, Lightbulb, Search, Activity, Play, TrendingUp, Key, Cpu, RefreshCw, ChevronRight, Sparkles } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
+import { supabase } from '../lib/supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface NicheExplorerProps {
@@ -181,7 +182,14 @@ export function NicheExplorer({ youtubeApiKey, geminiApiKey }: NicheExplorerProp
         setIsLoadingTrend(true);
         try {
             const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-            const res = await fetch(`${API_BASE_URL}/api/trends?keyword=${encodeURIComponent(trendQuery)}`);
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            
+            const res = await fetch(`${API_BASE_URL}/api/trends?keyword=${encodeURIComponent(trendQuery)}`, {
+                headers: {
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                }
+            });
             if (!res.ok) throw new Error('Cổng Node.js lỗi. Đảm bảo bạn đã mở server.js bằng lệnh `node server.js` ở thư mục server.');
             const data = await res.json();
             if (data.error) throw new Error(data.error);

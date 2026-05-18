@@ -140,6 +140,38 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
     };
   }, [financials]);
 
+  // Onboarding / Empty State cho Member mới
+  if (!isManagement && channels.length === 0 && tasks.length === 0) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-300 p-8 text-center shadow-sm">
+        <div className="w-20 h-20 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mb-6">
+          <Sparkles size={40} />
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Chào mừng bạn đến với DTA Studio!</h2>
+        <p className="text-gray-500 max-w-md mx-auto mb-6">
+          Tài khoản của bạn vừa được tạo. Hiện tại bạn chưa được phân công quản lý kênh hay nhiệm vụ (task) nào.
+        </p>
+        <div className="bg-blue-50 text-blue-800 p-5 rounded-xl text-sm max-w-lg shadow-sm border border-blue-100">
+          <p className="font-bold mb-3 flex items-center"><CheckCircle2 size={18} className="mr-2"/> Bạn cần làm gì tiếp theo?</p>
+          <ul className="text-left space-y-3">
+            <li className="flex items-start">
+              <span className="bg-blue-200 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mr-3 shrink-0 mt-0.5">1</span> 
+              <span>Liên hệ với <strong>Leader</strong> hoặc <strong>Manager</strong> để được phân bổ kênh và quyền.</span>
+            </li>
+            <li className="flex items-start">
+              <span className="bg-blue-200 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mr-3 shrink-0 mt-0.5">2</span> 
+              <span>Theo dõi mục <strong>Lịch Đăng (Kanban)</strong> để nhận các task sản xuất mới.</span>
+            </li>
+            <li className="flex items-start">
+              <span className="bg-blue-200 text-blue-700 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold mr-3 shrink-0 mt-0.5">3</span> 
+              <span>Hoàn thành task đúng deadline để tích lũy KPI và nhận lương thưởng.</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">

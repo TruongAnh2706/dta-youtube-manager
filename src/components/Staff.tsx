@@ -109,21 +109,30 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
       setIsSubmitting(true);
 
       if (editingStaff) {
-        // CẬP NHẬT nhân sự trực tiếp qua Supabase
+        // CẬP NHẬT nhân sự trực tiếp qua API Backend để bypass RLS
         const updatedData = { ...formData };
-        // Không đổi mật khẩu được từ frontend mà không có service_role key, nên xoá đi
         delete updatedData.password;
+
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
+        const response = await fetch(`${API_BASE_URL}/api/staff/update`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({
+                ...updatedData,
+                id: editingStaff.id
+            })
+        });
+
+        const result = await response.json();
         
-        const safeData = toSnakeCase(updatedData);
-        delete safeData.id;
-
-        const { error: updateError } = await supabase
-          .from('staff_list')
-          .update(safeData)
-          .eq('id', editingStaff.id);
-
-        if (updateError) {
-          throw new Error(updateError.message);
+        if (!response.ok) {
+            throw new Error(result.error || 'Lỗi khi cập nhật thông tin nhân sự');
         }
         
         const stateUpdate = { ...updatedData };
@@ -150,11 +159,18 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
         const autoUsername = finalEmail.split('@')[0].toLowerCase();
         
         const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        
         const response = await fetch(`${API_BASE_URL}/api/staff/create`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
             body: JSON.stringify({
                 ...formData,
+                id: newStaffId,
                 email: finalEmail,
                 password: passwordToUse,
                 username: autoUsername
@@ -178,12 +194,25 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, email?: string) => {
     if (confirm('Lưu ý: Bạn xóa nhân sự này sẽ không thể khôi phục. Chắc chắn?')) {
       try {
-        const { error } = await supabase.from('staff_list').delete().eq('id', id);
-        if (error) {
-           showToast(`Lỗi xóa nhân sự: ${error.message}`, 'error');
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+        const response = await fetch(`${API_BASE_URL}/api/staff/delete`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({ id, email })
+        });
+        const result = await response.json();
+
+        if (!response.ok) {
+           showToast(`Lỗi xóa nhân sự: ${result.error || 'Unknown error'}`, 'error');
            return;
         }
 
@@ -374,7 +403,7 @@ export function StaffManager({ staffList, setStaffList, channels, tasks, geminiA
                     <button onClick={() => handleOpenModal(staff)} className="p-1 text-gray-400 hover:text-blue-600 transition-colors">
                       <Edit2 size={16} />
                     </button>
-                    <button onClick={() => handleDelete(staff.id)} className="p-1 text-gray-400 hover:text-red-600 transition-colors">
+                    <button onClick={() => handleDelete(staff.id, staff.email)} className="p-1 text-gray-400 hover:text-red-600 transition-colors">
                       <Trash2 size={16} />
                     </button>
                   </div>

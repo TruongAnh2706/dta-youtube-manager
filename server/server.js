@@ -169,7 +169,7 @@ app.post('/api/auth/login', async (req, res) => {
  * POST /api/auth/change-password
  * Body: { staffId, oldPassword, newPassword }
  */
-app.post('/api/auth/change-password', async (req, res) => {
+app.post('/api/auth/change-password', verifyAuth, async (req, res) => {
     const { staffId, oldPassword, newPassword } = req.body;
 
     if (!staffId || !oldPassword || !newPassword) {
@@ -226,7 +226,7 @@ app.post('/api/auth/change-password', async (req, res) => {
  * Body: { name, role, username, password, ... }
  * Gửi lên Supabase Auth Admin để tạo user, sau đó insert vào staff_list
  */
-app.post('/api/staff/create', async (req, res) => {
+app.post('/api/staff/create', verifyAuth, async (req, res) => {
     const { password, email, ...staffData } = req.body;
 
     if (!password) {
@@ -249,7 +249,11 @@ app.post('/api/staff/create', async (req, res) => {
 
         if (authError) {
             console.error('[AUTH] Create User Error:', authError.message);
-            return res.status(400).json({ error: `Lỗi Auth: ${authError.message}` });
+            let errMsg = authError.message;
+            if (errMsg.includes('already been registered')) {
+                errMsg = 'Email này đã tồn tại trong hệ thống, vui lòng sử dụng Email khác!';
+            }
+            return res.status(400).json({ error: `Lỗi Auth: ${errMsg}` });
         }
 
         // 2. Insert vào staff_list - PHẢI chuyển sang snake_case cho PostgreSQL
@@ -284,11 +288,45 @@ app.post('/api/staff/create', async (req, res) => {
 });
 
 /**
+ * POST /api/staff/update
+ * Body: { id, ...staffData }
+ * Update staff_list bằng service_role key để bypass RLS
+ */
+app.post('/api/staff/update', verifyAuth, async (req, res) => {
+    const { id, ...updateData } = req.body;
+
+    if (!id) {
+        return res.status(400).json({ error: 'Thiếu ID nhân sự.' });
+    }
+
+    try {
+        const dbPayload = toSnakeCase(updateData);
+        
+        const { data, error } = await supabase
+            .from('staff_list')
+            .update(dbPayload)
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) {
+            return res.status(500).json({ error: `Lỗi cập nhật db: ${error.message}` });
+        }
+
+        res.json({ success: true, staff: toCamelCase(data) });
+
+    } catch (err) {
+        console.error('[STAFF] Update error:', err);
+        res.status(500).json({ error: 'Lỗi hệ thống.' });
+    }
+});
+
+/**
  * POST /api/staff/update-password
  * Body: { staffId, newPassword, username }
  * Admin dùng để reset password nhân viên (thông qua Auth Admin)
  */
-app.post('/api/staff/update-password', async (req, res) => {
+app.post('/api/staff/update-password', verifyAuth, async (req, res) => {
     const { staffId, newPassword, email } = req.body;
 
     if (!staffId || !newPassword || !email) {
@@ -326,7 +364,7 @@ app.post('/api/staff/update-password', async (req, res) => {
  * Admin dùng để sửa thông tin nhân viên trong bảng `staff_list`
  * (vượt qua RLS do client SDK bị block quyền Update)
  */
-app.post('/api/staff/update', async (req, res) => {
+app.post('/api/staff/update', verifyAuth, async (req, res) => {
     const { id, ...updatedData } = req.body;
 
     if (!id) {
@@ -360,7 +398,7 @@ app.post('/api/staff/update', async (req, res) => {
 /**
  * Xóa nhân viên khỏi `staff_list` và cố gắng xóa trên auth.users (nếu tìm thấy email)
  */
-app.post('/api/staff/delete', async (req, res) => {
+app.post('/api/staff/delete', verifyAuth, async (req, res) => {
     const { id, email } = req.body;
 
     if (!id) {
@@ -400,7 +438,7 @@ app.post('/api/staff/delete', async (req, res) => {
  * Body: { url, skipTopVideos? }
  * Server gọi YouTube API bằng key server-side
  */
-app.post('/api/youtube/channel-info', async (req, res) => {
+app.post('/api/youtube/channel-info', verifyAuth, async (req, res) => {
     const { url, skipTopVideos } = req.body;
 
     if (!url) {
@@ -451,7 +489,7 @@ app.post('/api/youtube/channel-info', async (req, res) => {
  * Body: { channelName, description, topics }
  * Server gọi Gemini API
  */
-app.post('/api/ai/analyze-topic', async (req, res) => {
+app.post('/api/ai/analyze-topic', verifyAuth, async (req, res) => {
     const { channelName, description, topics } = req.body;
 
     try {
@@ -497,7 +535,7 @@ Trả về JSON: { "suggestedTopicIds": ["id1", "id2"], "newTopics": [{"name": "
  * Body: { prompt, responseFormat? }
  * API chung cho các call Gemini AI
  */
-app.post('/api/ai/generate', async (req, res) => {
+app.post('/api/ai/generate', verifyAuth, async (req, res) => {
     const { prompt, responseFormat } = req.body;
 
     if (!prompt) {
@@ -546,7 +584,7 @@ app.post('/api/ai/generate', async (req, res) => {
 const trendsCache = {};
 const CACHE_DURATION = 1000 * 60 * 60; // 1 hr
 
-app.get('/api/trends', async (req, res) => {
+app.get('/api/trends', verifyAuth, async (req, res) => {
     const keyword = req.query.keyword;
     if (!keyword) {
         return res.status(400).json({ error: 'Keyword is required' });
