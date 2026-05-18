@@ -18,5 +18,9 @@ ALTER TABLE topics ADD COLUMN IF NOT EXISTS assignees TEXT[] DEFAULT '{}';
 -- 5. Sửa BUG-09: Thêm cột allowed_staff_ids cho competitors
 ALTER TABLE competitors ADD COLUMN IF NOT EXISTS allowed_staff_ids TEXT[] DEFAULT '{}';
 
+-- 6. Sửa lỗi mất dữ liệu phân quyền nhân sự trên Kênh Nguồn: Thêm cột status và last_health_check cho source_channels
+ALTER TABLE source_channels ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+ALTER TABLE source_channels ADD COLUMN IF NOT EXISTS last_health_check TEXT;
+
 -- Xóa cache để đảm bảo Typescript và DB schema ăn khớp
 NOTIFY pgrst, 'reload schema';

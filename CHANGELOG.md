@@ -4,6 +4,10 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-05-18
+### 🐛 Sửa lỗi (Bug Fixes)
+- **Kênh Nguồn (Source Channels):** Sửa lỗi mất dữ liệu phân quyền nhân sự khi reload trang (F5). Bổ sung schema `status` và `last_health_check` cho bảng `source_channels` để khắc phục lỗi Crash lúc AutoSave đẩy dữ liệu lên Supabase.
+
 ## [1.0.0] - 2026-05-18
 ### 🚀 Tính năng mới (Features)
 - **Hệ thống Quản lý Phiên bản (Versioning):** Thêm phiên bản `v1.0.0` và ngày cập nhật (Build Date) trực tiếp vào góc dưới cùng bên trái thanh menu để nhận diện bản build mới dễ dàng.

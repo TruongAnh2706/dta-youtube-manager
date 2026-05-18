@@ -112,6 +112,8 @@ CREATE TABLE IF NOT EXISTS source_channels (
   top_videos JSONB DEFAULT '[]'::jsonb,
   allowed_staff_ids JSONB DEFAULT '[]'::jsonb,
   country TEXT,
+  status TEXT DEFAULT 'active',
+  last_health_check TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

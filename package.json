@@ -1,7 +1,7 @@
 {
   "name": "dta-youtube-manager",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"vite --port=3000 --host=0.0.0.0\" \"node server/server.js\"",
