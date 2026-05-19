@@ -28,6 +28,7 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
   const [expandedTopicId, setExpandedTopicId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [showEmptyOnly, setShowEmptyOnly] = useState(false);
 
   const countries = useMemo(() => {
     if (!Array.isArray(topics)) return ['All'];
@@ -51,10 +52,16 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
         hashtags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesCountry = countryFilter === 'All' || country === countryFilter;
+      
+      const topicChannelCount = channels.filter(c => (c.topicIds || []).includes(topic.id)).length;
+      const topicSourceCount = sourceChannels.filter(c => (c.topicIds || []).includes(topic.id)).length;
+      
+      const isEmpty = topicChannelCount === 0 && topicSourceCount === 0;
+      const matchesEmpty = showEmptyOnly ? isEmpty : true;
 
-      return matchesSearch && matchesCountry;
+      return matchesSearch && matchesCountry && matchesEmpty;
     });
-  }, [topics, searchQuery, countryFilter]);
+  }, [topics, searchQuery, countryFilter, showEmptyOnly, channels, sourceChannels]);
 
   const handleOpenModal = (topic?: Topic) => {
     if (topic) {
@@ -238,6 +245,12 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
               <List size={18} />
             </button>
           </div>
+          <button 
+            onClick={() => setShowEmptyOnly(!showEmptyOnly)}
+            className={`px-3 py-2 rounded-lg flex items-center text-sm font-medium transition-colors border shadow-sm self-start md:self-center ${showEmptyOnly ? 'bg-red-50 text-red-700 border-red-200' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'}`}
+          >
+            Lọc CĐ rác (0 kênh)
+          </button>
           {selectedIds.length > 0 && hasPermission('topics_edit') && (
             <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors shadow-sm self-start md:self-center">
               Xóa {selectedIds.length} chủ đề
@@ -301,6 +314,7 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
                     onToggleExpand={() => setExpandedTopicId(expandedTopicId === topic.id ? null : topic.id)}
                     staffList={staffList}
                     isSelected={selectedIds.includes(topic.id)}
+                    sourceChannelCount={sourceChannels.filter(c => (c.topicIds || []).includes(topic.id)).length}
                     onSelectToggle={() => {
                       if (selectedIds.includes(topic.id)) {
                         setSelectedIds(prev => prev.filter(id => id !== topic.id));
@@ -327,6 +341,7 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
                         }} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4" />
                       </th>
                       <th className="px-4 py-3">Tên chủ đề</th>
+                      <th className="px-4 py-3 text-center">Kênh nguồn</th>
                       <th className="px-4 py-3">Quốc gia</th>
                       <th className="px-4 py-3 hidden md:table-cell">Mô tả</th>
                       <th className="px-4 py-3 hidden lg:table-cell">Tags</th>
@@ -350,6 +365,11 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
                             <span className="w-3 h-3 rounded-full mr-2 shadow-sm" style={{ backgroundColor: topic.color }}></span>
                             {topic.name}
                           </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-red-700 bg-red-100 rounded-full">
+                            {sourceChannels.filter(c => (c.topicIds || []).includes(topic.id)).length}
+                          </span>
                         </td>
                         <td className="px-4 py-3">
                           <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md text-xs font-medium border border-gray-200">

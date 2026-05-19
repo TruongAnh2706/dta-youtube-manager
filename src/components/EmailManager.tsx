@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { 
   Search, Plus, Upload, Download, Trash2, Edit2, ShieldAlert,
-  Save, X, FileDown, CheckCircle2, Clock, AlertTriangle, PlayCircle, Eye, EyeOff, Copy, ExternalLink
+  Save, X, FileDown, CheckCircle2, Clock, AlertTriangle, PlayCircle, Eye, EyeOff, Copy, ExternalLink, Mail
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import ExcelJS from 'exceljs';
@@ -21,9 +21,10 @@ interface EmailManagerProps {
   setTasks: React.Dispatch<React.SetStateAction<VideoTask[]>>;
   systemSettings?: import('../types').SystemSettings;
   channels?: Channel[];
+  privacyMode?: boolean;
 }
 
-export function EmailManager({ emails, setEmails, staffList, topics, currentUser, tasks, setTasks, systemSettings, channels = [] }: EmailManagerProps) {
+export function EmailManager({ emails, setEmails, staffList, topics, currentUser, tasks, setTasks, systemSettings, channels = [], privacyMode = false }: EmailManagerProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
@@ -784,58 +785,86 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
       </div>
 
       {viewingEmail && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col">
-            <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <h3 className="text-lg font-bold text-gray-900 flex items-center">
-                <Search size={18} className="mr-2 text-blue-500" /> Chi tiết Email
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col transform transition-all">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-gray-50 to-white">
+              <h3 className="text-xl font-bold text-gray-900 flex items-center">
+                <Mail size={22} className="mr-3 text-blue-500" /> Chi tiết tài khoản
               </h3>
-              <button onClick={() => setViewingEmail(null)} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => setViewingEmail(null)} className="text-gray-400 hover:text-red-500 transition-colors p-1 hover:bg-red-50 rounded-lg">
                 <X size={20} />
               </button>
             </div>
-            <div className="p-5 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Email đăng nhập</label>
-                <div className="font-medium text-gray-900 text-base">{viewingEmail.email}</div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 bg-gray-50 p-3 rounded-lg border border-gray-100">
+            
+            <div className="p-6 space-y-6">
+              <div className="flex items-center justify-between">
                 <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Mật khẩu</label>
-                  <div className="font-mono text-blue-700 bg-white px-2 py-1 rounded border border-gray-200 mt-1 select-all">{viewingEmail.password || '-'}</div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Tài khoản Email</label>
+                  <div className="font-semibold text-gray-900 text-lg flex items-center gap-2">
+                    {privacyMode ? '••••••••' : viewingEmail.email}
+                    {!privacyMode && <button onClick={() => handleCopy(viewingEmail.email, 'Email')} className="text-gray-400 hover:text-blue-500"><Copy size={14} /></button>}
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Trạng thái</label>
-                  <div className="mt-1">{getStatusBadge(viewingEmail.status)}</div>
+                <div className="text-right">
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Trạng thái</label>
+                  {getStatusBadge(viewingEmail.status)}
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Email Khôi phục</label>
-                  <div className="text-gray-800 text-sm mt-1 break-all bg-gray-50 px-2 py-1 rounded select-all">{viewingEmail.recoveryEmail || '-'}</div>
+                <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100/50">
+                  <label className="text-xs font-bold text-blue-600/70 uppercase flex justify-between items-center">
+                    Mật khẩu
+                    {!privacyMode && viewingEmail.password && <button onClick={() => handleCopy(viewingEmail.password, 'Mật khẩu')} className="hover:text-blue-600"><Copy size={12} /></button>}
+                  </label>
+                  <div className="font-mono text-blue-800 text-sm mt-2 select-all truncate font-semibold">
+                    {privacyMode ? '••••••••' : (viewingEmail.password || '-')}
+                  </div>
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Mã 2FA</label>
-                  <div className="text-gray-800 text-sm mt-1 bg-gray-50 px-2 py-1 rounded font-mono select-all">{viewingEmail.twoFactorAuth || '-'}</div>
+                
+                <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100/50">
+                  <label className="text-xs font-bold text-purple-600/70 uppercase flex justify-between items-center">
+                    Mã 2FA
+                    {!privacyMode && viewingEmail.twoFactorAuth && <button onClick={() => handleCopy(viewingEmail.twoFactorAuth, 'Mã 2FA')} className="hover:text-purple-600"><Copy size={12} /></button>}
+                  </label>
+                  <div className="font-mono text-purple-800 text-sm mt-2 select-all truncate font-semibold">
+                    {privacyMode ? '••••••••' : (viewingEmail.twoFactorAuth || '-')}
+                  </div>
                 </div>
               </div>
+
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <label className="text-xs font-bold text-gray-500 uppercase flex justify-between items-center">
+                  Email Khôi phục
+                  {!privacyMode && viewingEmail.recoveryEmail && <button onClick={() => handleCopy(viewingEmail.recoveryEmail, 'Email khôi phục')} className="hover:text-gray-800"><Copy size={12} /></button>}
+                </label>
+                <div className="text-gray-800 text-sm mt-2 select-all font-medium break-all">
+                  {privacyMode ? '••••••••' : (viewingEmail.recoveryEmail || '-')}
+                </div>
+              </div>
+
               {(() => {
                 const linkedChannel = channels?.find(c => c.email?.toLowerCase() === viewingEmail.email.toLowerCase());
                 if (linkedChannel) {
                   return (
-                    <div className="bg-green-50 border border-green-200 p-3 rounded-lg mt-2">
-                       <label className="text-xs font-bold text-green-800 uppercase flex items-center mb-2"><CheckCircle2 size={14} className="mr-1" /> Kênh đã liên kết</label>
-                       <div className="flex items-center justify-between">
-                         <div className="flex items-center gap-2">
+                    <div className="bg-green-50 border border-green-200 p-4 rounded-xl">
+                       <label className="text-xs font-bold text-green-700 uppercase flex items-center mb-3">
+                         <CheckCircle2 size={14} className="mr-1.5" /> Kênh đã liên kết
+                       </label>
+                       <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-green-100 shadow-sm">
+                         <div className="flex items-center gap-3">
                            {linkedChannel.avatarUrl ? (
-                              <img src={linkedChannel.avatarUrl} className="w-8 h-8 rounded-full border border-green-200" referrerPolicy="no-referrer" />
+                              <img src={linkedChannel.avatarUrl} className="w-10 h-10 rounded-full border border-green-200 shadow-sm object-cover" referrerPolicy="no-referrer" />
                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-green-200 flex items-center justify-center shrink-0 border border-green-300"><PlayCircle size={16} className="text-green-700" /></div>
+                              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center shrink-0 border border-green-200 text-green-600"><PlayCircle size={20} /></div>
                            )}
-                           <span className="font-bold text-green-900">{linkedChannel.name}</span>
+                           <div className="flex flex-col">
+                             <span className="font-bold text-green-900 text-sm line-clamp-1">{linkedChannel.name}</span>
+                             <span className="text-xs text-gray-500 line-clamp-1">{linkedChannel.url}</span>
+                           </div>
                          </div>
-                         <a href={linkedChannel.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs bg-white text-green-700 px-2 py-1 rounded shadow-sm border border-green-200 hover:bg-green-100">
-                           Mở kênh <ExternalLink size={12}/>
+                         <a href={linkedChannel.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs bg-green-50 text-green-700 px-3 py-2 rounded-lg font-medium hover:bg-green-100 transition-colors shrink-0">
+                           Mở <ExternalLink size={14}/>
                          </a>
                        </div>
                     </div>
@@ -843,15 +872,17 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                 }
                 return null;
               })()}
+              
               {viewingEmail.notes && (
                 <div>
-                  <label className="text-xs font-bold text-gray-500 uppercase">Ghi chú</label>
-                  <div className="text-gray-700 text-sm mt-1 p-2 bg-yellow-50 border border-yellow-100 rounded-lg">{viewingEmail.notes}</div>
+                  <label className="text-xs font-bold text-gray-500 uppercase mb-2 block">Ghi chú</label>
+                  <div className="text-gray-700 text-sm p-3 bg-yellow-50 border border-yellow-200/60 rounded-xl leading-relaxed whitespace-pre-wrap">{viewingEmail.notes}</div>
                 </div>
               )}
             </div>
+            
             <div className="p-4 border-t border-gray-100 flex justify-end bg-gray-50">
-              <button onClick={() => setViewingEmail(null)} className="px-5 py-2 text-gray-700 hover:bg-gray-200 rounded-lg font-medium transition-colors">Đóng</button>
+              <button onClick={() => setViewingEmail(null)} className="px-6 py-2.5 bg-gray-800 text-white hover:bg-gray-700 rounded-lg font-medium transition-colors shadow-sm">Đóng lại</button>
             </div>
           </div>
         </div>

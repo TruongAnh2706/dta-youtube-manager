@@ -57,6 +57,20 @@ export type Channel = {
   proxyId?: string;
   postingSchedules?: PostingSchedule[];
   linkedSourceChannelIds?: string[];
+  isMonetized?: boolean;
+  monetizationDate?: string;
+};
+
+export type ChannelMetric = {
+  id: string;
+  channelId: string;
+  reportDate: string; // YYYY-MM-DD
+  views: number;
+  revenueUsd: number;
+  revenueVnd: number;
+  exchangeRate: number;
+  updatedBy?: string;
+  updatedAt?: string;
 };
 
 export type YoutubeVideo = {
@@ -124,6 +138,7 @@ export type Staff = {
   password?: string;
   assignedChannelIds: string[];
   status: 'online' | 'offline' | 'inactive';
+  lastLoginAt?: string; // ISO String
   baseSalary: number;
   managedEmailCount: number;
   kpiTargets?: {
@@ -154,6 +169,12 @@ export type VideoTask = {
   bestPublishTime?: string;
   isClaimable?: boolean;
   linkedAssetIds?: string[];
+  description?: string;
+  creatorId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  tags?: string[];
+  projectType?: string;
   comments?: {
     id: string;
     userId: string;

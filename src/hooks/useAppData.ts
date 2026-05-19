@@ -5,7 +5,7 @@ import {
     Channel, Topic, Staff, SourceChannel, VideoTask, DailyReport,
     FinancialRecord, Transaction, FinancialAccount, TransactionCategory,
     Strike, Asset, Proxy, License, Competitor, SystemSettings, ManagedEmail,
-    CustomStatus, StaffRole
+    CustomStatus, StaffRole, ChannelMetric
 } from '../types';
 
 // ========================================
@@ -58,6 +58,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
     const [licenses, setLicenses] = useState<License[]>([]);
     const [competitors, setCompetitors] = useState<Competitor[]>([]);
     const [managedEmails, setManagedEmails] = useState<ManagedEmail[]>([]);
+    const [channelMetrics, setChannelMetrics] = useState<ChannelMetric[]>([]);
     const [isWave1Loaded, setIsWave1Loaded] = useState(false);
     const [isWave2Loaded, setIsWave2Loaded] = useState(false);
     const isDataLoaded = isWave1Loaded && isWave2Loaded;
@@ -169,7 +170,8 @@ export function useAppData(currentUser: CurrentUserParam | null) {
             'proxies': setProxies,
             'licenses': setLicenses,
             'competitors': setCompetitors,
-            'managed_emails': setManagedEmails
+            'managed_emails': setManagedEmails,
+            'channel_metrics': setChannelMetrics
         };
 
         if (tableName === 'system_settings') {
@@ -234,7 +236,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
                 
                 const baseQueries = [
                     supabase.from('system_settings').select('*'), // Tất cả role đều cần load (API keys, rolePermissions, taskStatuses...)
-                    supabase.from('staff_list').select('id, name, role, skills, email, phone, username, assigned_channel_ids, status, base_salary, managed_email_count, kpi_targets'),
+                    supabase.from('staff_list').select('id, name, role, skills, email, phone, username, assigned_channel_ids, status, last_login_at, base_salary, managed_email_count, kpi_targets'),
                     supabase.from('channels').select('*'),
                     supabase.from('topics').select('*'),
                     supabase.from('source_channels').select('*'),
@@ -266,17 +268,18 @@ export function useAppData(currentUser: CurrentUserParam | null) {
                     try {
                         const [
                             tasksRes, financialsRes, transactionsRes, strikesRes, 
-                            assetsRes, proxiesRes, licensesRes, competitorsRes, emailsRes
+                            assetsRes, proxiesRes, licensesRes, competitorsRes, emailsRes, metricsRes
                         ] = await Promise.all([
-                            supabase.from('video_tasks').select('*').limit(5000), // Phân trang đơn giản cho các bảng nặng
-                            supabase.from('financials').select('*').limit(5000),
-                            supabase.from('transactions').select('*').limit(5000),
+                            supabase.from('video_tasks').select('*').limit(200), // P1.1: Giới hạn 200 dòng để tối ưu load time
+                            supabase.from('financials').select('*').limit(1000),
+                            supabase.from('transactions').select('*').limit(1000),
                             supabase.from('strikes').select('*'),
-                            supabase.from('assets').select('*').limit(5000),
+                            supabase.from('assets').select('*').limit(1000),
                             supabase.from('proxies').select('*'),
                             supabase.from('licenses').select('*'),
                             supabase.from('competitors').select('*'),
-                            supabase.from('managed_emails').select('*').limit(5000)
+                            supabase.from('managed_emails').select('*').limit(200), // Tối ưu payload
+                            supabase.from('channel_metrics').select('*').limit(1000)
                         ]);
 
                         if (tasksRes.data) setTasks(toCamelCase(tasksRes.data));
@@ -288,6 +291,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
                         if (licensesRes.data) setLicenses(toCamelCase(licensesRes.data));
                         if (competitorsRes.data) setCompetitors(toCamelCase(competitorsRes.data));
                         if (emailsRes.data) setManagedEmails(toCamelCase(emailsRes.data));
+                        if (metricsRes.data) setChannelMetrics(toCamelCase(metricsRes.data));
                         
                         setIsWave2Loaded(true);
                         console.log('✅ Wave 2 Load Complete!');
@@ -305,7 +309,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
     }, [currentUser]);
 
     const appData = {
-        channels, topics, staffList, sourceChannels, tasks, dailyReports, financials, transactions, accounts, categories, strikes, assets, proxies, licenses, competitors, managedEmails, systemSettings
+        channels, topics, staffList, sourceChannels, tasks, dailyReports, financials, transactions, accounts, categories, strikes, assets, proxies, licenses, competitors, managedEmails, channelMetrics, systemSettings
     };
 
     return {
@@ -317,6 +321,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
         assets, setAssets, proxies, setProxies,
         licenses, setLicenses, competitors, setCompetitors,
         managedEmails, setManagedEmails,
+        channelMetrics, setChannelMetrics,
         systemSettings, setSystemSettings,
         activeYoutubeKey, activeGeminiKey, rotateYoutubeKey,
         handleRemoteUpdate, appData,

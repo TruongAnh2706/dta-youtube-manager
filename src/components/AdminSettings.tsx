@@ -40,29 +40,32 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
   const handleAddKey = () => {
     if (!newKey.trim()) return;
 
-    const keyObj: ApiKey = {
+    const keys = newKey.split('\n').map(k => k.trim()).filter(Boolean);
+    if (keys.length === 0) return;
+
+    const newKeysObj: ApiKey[] = keys.map(k => ({
       id: crypto.randomUUID(),
-      key: newKey.trim(),
+      key: k,
       provider: newKeyProvider,
       status: 'active',
       note: newKeyNote.trim()
-    };
+    }));
 
     if (newKeyProvider === 'youtube') {
       setSettings(prev => ({
         ...prev,
-        youtubeApiKeys: [...prev.youtubeApiKeys, keyObj]
+        youtubeApiKeys: [...prev.youtubeApiKeys, ...newKeysObj]
       }));
     } else {
       setSettings(prev => ({
         ...prev,
-        geminiApiKeys: [...prev.geminiApiKeys, keyObj]
+        geminiApiKeys: [...prev.geminiApiKeys, ...newKeysObj]
       }));
     }
 
     setNewKey('');
     setNewKeyNote('');
-    showToast(`Đã thêm API Key ${newKeyProvider.toUpperCase()} thành công!`, 'success');
+    showToast(`Đã thêm ${newKeysObj.length} API Key ${newKeyProvider.toUpperCase()} thành công!`, 'success');
   };
 
   const handleDeleteKey = (id: string, provider: 'youtube' | 'gemini') => {
@@ -185,16 +188,15 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">API Key (Nhập nhiều key, mỗi key 1 dòng)</label>
                   <div className="flex gap-2">
                     <div className="relative flex-1">
-                      <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                      <input 
-                        type="password" 
+                      <Key className="absolute left-3 top-3 text-gray-400" size={16} />
+                      <textarea 
                         value={newKey}
                         onChange={e => setNewKey(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 text-sm"
-                        placeholder="Dán API Key vào đây..."
+                        className="w-full border border-gray-300 rounded-lg pl-10 pr-3 py-2 text-sm min-h-[80px]"
+                        placeholder="Dán các API Key vào đây..."
                       />
                     </div>
                     <button 

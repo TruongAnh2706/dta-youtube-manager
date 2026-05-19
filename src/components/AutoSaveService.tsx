@@ -222,7 +222,7 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
                     if (mappedKey && prevDataRef.current && prevDataRef.current[mappedKey]) {
                         const eventType = payload.eventType;
                         const newRow = payload.new ? toCamelCase(payload.new) : null;
-                        const oldRow = payload.old;
+                        const oldRow = payload.old as any;
                         
                         let prevArray = prevDataRef.current[mappedKey];
                         if (eventType === 'INSERT' && newRow) {

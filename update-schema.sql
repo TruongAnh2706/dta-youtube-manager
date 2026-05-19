@@ -22,5 +22,26 @@ ALTER TABLE competitors ADD COLUMN IF NOT EXISTS allowed_staff_ids TEXT[] DEFAUL
 ALTER TABLE source_channels ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
 ALTER TABLE source_channels ADD COLUMN IF NOT EXISTS last_health_check TEXT;
 
+-- 7. Thêm trường last_login_at để theo dõi lịch sử đăng nhập nhân sự (Kanban Tab)
+ALTER TABLE staff_list ADD COLUMN IF NOT EXISTS last_login_at TEXT;
+
+-- 8. Thêm cột BKT cho channels
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS is_monetized BOOLEAN DEFAULT FALSE;
+ALTER TABLE channels ADD COLUMN IF NOT EXISTS monetization_date TEXT;
+
+-- 9. Tạo bảng channel_metrics để quản lý báo cáo BKT
+CREATE TABLE IF NOT EXISTS channel_metrics (
+  id TEXT PRIMARY KEY,
+  channel_id TEXT REFERENCES channels(id) ON DELETE CASCADE,
+  report_date TEXT NOT NULL,
+  views BIGINT DEFAULT 0,
+  revenue_usd NUMERIC DEFAULT 0,
+  revenue_vnd NUMERIC DEFAULT 0,
+  exchange_rate NUMERIC DEFAULT 25000,
+  updated_by TEXT REFERENCES staff_list(id) ON DELETE SET NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(channel_id, report_date)
+);
+
 -- Xóa cache để đảm bảo Typescript và DB schema ăn khớp
 NOTIFY pgrst, 'reload schema';

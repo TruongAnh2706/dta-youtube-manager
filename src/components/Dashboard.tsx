@@ -318,25 +318,32 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
         <div className={`${isManagement ? 'lg:col-span-1' : 'lg:col-span-2'} bg-white p-5 rounded-xl shadow-sm border border-gray-100`}>
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center"><Hash size={18} className="mr-2 text-purple-500" /> Phân bổ Chủ đề (Heatmap)</h2>
           <div className="space-y-4">
-            {topics.map(topic => {
-              const count = channels.filter(c => (c.topicIds || []).includes(topic.id)).length;
-              const percentage = channels.length > 0 ? Math.round((count / channels.length) * 100) : 0;
+            {(() => {
+              const topicCounts = topics.map(topic => {
+                const count = channels.filter(c => (c.topicIds || []).includes(topic.id)).length;
+                return { ...topic, count };
+              }).sort((a, b) => b.count - a.count);
 
-              return (
-                <div key={topic.id}>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="font-medium text-gray-700">{topic.name}</span>
-                    <span className="text-gray-500">{count} kênh ({percentage}%)</span>
+              const topTopics = topicCounts.slice(0, 10);
+              
+              return topTopics.map(topic => {
+                const percentage = channels.length > 0 ? Math.round((topic.count / channels.length) * 100) : 0;
+                return (
+                  <div key={topic.id}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-gray-700">{topic.name}</span>
+                      <span className="text-gray-500">{topic.count} kênh ({percentage}%)</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className="h-2.5 rounded-full transition-all duration-500"
+                        style={{ width: `${percentage}%`, backgroundColor: topic.color }}
+                      ></div>
+                    </div>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
-                    <div
-                      className="h-2.5 rounded-full transition-all duration-500"
-                      style={{ width: `${percentage}%`, backgroundColor: topic.color }}
-                    ></div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
             {topics.length === 0 && (
               <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-200 rounded-lg">
                 Chưa có dữ liệu chủ đề

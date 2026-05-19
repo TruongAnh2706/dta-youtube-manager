@@ -215,6 +215,19 @@ export function NicheExplorer({ youtubeApiKey, geminiApiKey }: NicheExplorerProp
                 </div>
             </div>
 
+            {/* Guide/Instructions */}
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start shadow-sm">
+                <Lightbulb className="text-blue-500 mr-3 shrink-0 mt-0.5" size={20} />
+                <div className="text-sm text-blue-900">
+                    <p className="font-bold mb-1">Hướng dẫn sử dụng La Bàn Ngách:</p>
+                    <ul className="list-disc pl-4 space-y-1 text-blue-800">
+                        <li><strong>Mỏ Keyword (Dài):</strong> Nhập từ khóa gốc để phần mềm quét 20 video Top 1 YouTube, tự động bóc tách và thống kê các cụm từ khóa đuôi dài (Long-tail keywords) được sử dụng nhiều nhất. Dùng làm Tags và Tiêu đề để kéo view.</li>
+                        <li><strong>AI Khai Ngách:</strong> Bí ý tưởng làm kênh? Hãy nhập một chủ đề rộng (VD: "Thú cưng"), AI sẽ chẻ nhỏ và gợi ý 3 "ngách xanh" cực ngách, ít cạnh tranh nhưng dễ kiếm tiền, kèm theo độ khó và đánh giá tệp khán giả.</li>
+                        <li><strong>Google Trends Heatmap:</strong> Đo lường xu hướng quan tâm của khán giả trong 12 tháng qua để biết ngách này đang trend lên, trend xuống, hay ăn view theo mùa vụ.</li>
+                    </ul>
+                </div>
+            </div>
+
             {/* Tabs */}
             <div className="flex space-x-1 bg-gray-100 p-1 rounded-xl w-fit">
                 <button

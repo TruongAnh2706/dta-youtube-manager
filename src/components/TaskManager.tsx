@@ -841,7 +841,7 @@ export function TaskManager({
                             >
                               <div className="flex justify-between items-start mb-2 gap-2">
                                 <h4 className="text-sm font-bold text-gray-900 leading-snug group-hover:text-blue-600 transition-colors line-clamp-2">{pureTitle}</h4>
-                                {overdue && <AlertCircle size={16} className="text-red-500 shrink-0" title="Đã quá hạn!" />}
+                                {overdue && <span title="Đã quá hạn!"><AlertCircle size={16} className="text-red-500 shrink-0" /></span>}
                               </div>
                               
                               {category && <span className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded-md mb-3 uppercase ${overdue ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{category}</span>}

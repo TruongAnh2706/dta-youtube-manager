@@ -81,11 +81,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Khởi tạo ban đầu
         supabase.auth.getSession().then(({ data: { session } }) => {
             loadUserFromSession(session);
+            // Cập nhật last login nếu có session
+            if (session?.user?.email) {
+                supabase.from('staff_list').update({ 
+                    last_login_at: new Date().toISOString(),
+                    status: 'online'
+                }).eq('email', session.user.email).then();
+            }
         });
 
         // Lắng nghe sự kiện đăng nhập/đăng xuất
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             loadUserFromSession(session);
+            if (_event === 'SIGNED_IN' && session?.user?.email) {
+                supabase.from('staff_list').update({ 
+                    last_login_at: new Date().toISOString(),
+                    status: 'online'
+                }).eq('email', session.user.email).then();
+            } else if (_event === 'SIGNED_OUT') {
+                // Chúng ta không update offline ngay vì có thể email đã mất trong session,
+                // Nhưng có thể update thông qua API logout nếu cần.
+            }
         });
 
         return () => {

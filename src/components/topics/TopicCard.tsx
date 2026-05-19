@@ -1,6 +1,6 @@
 import React from 'react';
 import { Topic, Staff } from '../../types';
-import { Edit2, Trash2, Globe, Target, BarChart3, ChevronUp, ChevronDown, Lightbulb, Tag, Hash } from 'lucide-react';
+import { Edit2, Trash2, Globe, Target, BarChart3, ChevronUp, ChevronDown, Lightbulb, Tag, Hash, Youtube } from 'lucide-react';
 import { usePermissions } from '../../hooks/usePermissions';
 
 interface TopicCardProps {
@@ -12,9 +12,10 @@ interface TopicCardProps {
   staffList: Staff[];
   isSelected?: boolean;
   onSelectToggle?: () => void;
+  sourceChannelCount: number;
 }
 
-export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand, staffList, isSelected, onSelectToggle }: TopicCardProps) {
+export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand, staffList, isSelected, onSelectToggle, sourceChannelCount }: TopicCardProps) {
   const { hasPermission } = usePermissions();
   // Defensive checks for missing arrays
   const tags = topic.tags || [];
@@ -57,6 +58,11 @@ export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand,
         </div>
         
         <p className="text-sm text-gray-600 line-clamp-2 mb-4">{topic.description}</p>
+        
+        <div className="flex items-center text-xs text-gray-700 mb-4 bg-red-50/50 p-2 rounded-lg border border-red-100">
+           <Youtube size={14} className="mr-2 text-red-500"/>
+           <strong>{sourceChannelCount}</strong><span className="ml-1 text-gray-500">kênh nguồn</span>
+        </div>
         
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div className="bg-gray-50 p-3 rounded-lg">

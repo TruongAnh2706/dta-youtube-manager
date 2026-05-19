@@ -2,9 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const googleTrends = require('google-trends-api');
+const cron = require('node-cron');
 
-// Load environment variables
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const { createClient } = require('@supabase/supabase-js');
 
@@ -717,6 +718,22 @@ async function fetchChannelInfo(url, apiKey, skipTopVideos = false) {
     return result;
 }
 
+// ========================================
+// BACKGROUND JOBS (CRON)
+// ========================================
+// Chạy mỗi 6 tiếng để cập nhật giả lập trạng thái kênh (ví dụ)
+cron.schedule('0 */6 * * *', async () => {
+    console.log('[CRON] Đang chạy tác vụ cập nhật sức khỏe kênh ngầm...');
+    try {
+        // Ví dụ: Tìm các kênh source đã lâu chưa update (hơn 1 ngày)
+        // và tự động update hoặc gửi log.
+        // Đây là nơi sẽ gọi các hàm crawl dữ liệu tự động.
+        console.log('[CRON] Tác vụ hoàn tất thành công.');
+    } catch (err) {
+        console.error('[CRON] Lỗi khi chạy tác vụ ngầm:', err);
+    }
+});
+
 // Start server
 app.listen(PORT, () => {
     console.log(`✅ DTA API Server running on http://localhost:${PORT}`);
@@ -724,4 +741,5 @@ app.listen(PORT, () => {
     console.log(`   YouTube: POST /api/youtube/channel-info`);
     console.log(`   AI: POST /api/ai/generate`);
     console.log(`   Trends: GET /api/trends?keyword=...`);
+    console.log(`   Cronjobs: Enabled (node-cron)`);
 });

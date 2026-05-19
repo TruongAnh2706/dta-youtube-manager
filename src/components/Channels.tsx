@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Channel, Topic, Proxy, SourceChannel, VideoTask, Staff, FinancialRecord, Strike, ManagedEmail } from '../types';
+import { Channel, Topic, Proxy, SourceChannel, VideoTask, Staff, FinancialRecord, Strike, ManagedEmail, ChannelMetric } from '../types';
 import { Plus, Edit2, Trash2, X, ExternalLink, Search, Eye, EyeOff, ShieldAlert, RefreshCw, Upload, FileDown, AlertCircle, Sparkles, Copy, Check, Download, Clock, Calendar, User, DollarSign, BarChart2, Users, KanbanSquare, ShieldCheck, Mail, Link2, CheckCircle2, PlayCircle } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../lib/supabase';
@@ -18,6 +18,7 @@ interface ChannelsProps {
   proxies: Proxy[];
   privacyMode: boolean;
   sourceChannels: SourceChannel[];
+  setSourceChannels?: React.Dispatch<React.SetStateAction<SourceChannel[]>>;
   youtubeApiKey: string;
   rotateYoutubeKey: () => boolean;
   tasks: VideoTask[];
@@ -28,9 +29,10 @@ interface ChannelsProps {
   geminiApiKey?: string;
   managedEmails?: ManagedEmail[];
   setManagedEmails?: React.Dispatch<React.SetStateAction<ManagedEmail[]>>;
+  channelMetrics?: ChannelMetric[];
 }
 
-export function Channels({ channels, setChannels, topics, setTopics, proxies, privacyMode, sourceChannels, youtubeApiKey, rotateYoutubeKey, tasks, staffList, setStaffList, financials, strikes, geminiApiKey, managedEmails = [], setManagedEmails }: ChannelsProps) {
+export function Channels({ channels, setChannels, topics, setTopics, proxies, privacyMode, sourceChannels, setSourceChannels, youtubeApiKey, rotateYoutubeKey, tasks, staffList, setStaffList, financials, strikes, geminiApiKey, managedEmails = [], setManagedEmails, channelMetrics = [] }: ChannelsProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const { currentUser } = useAuth();
@@ -50,6 +52,11 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [editingStaffIds, setEditingStaffIds] = useState<string[]>([]);
   const [selectedManagedEmailId, setSelectedManagedEmailId] = useState<string>('');
   const [sourceTopicFilter, setSourceTopicFilter] = useState<string>('all');
+  const [topicSearchTerm, setTopicSearchTerm] = useState('');
+  const [sourceCountryFilter, setSourceCountryFilter] = useState<string>('all');
+  const [newSourceChannelUrl, setNewSourceChannelUrl] = useState('');
+  const [emailSearchTerm, setEmailSearchTerm] = useState('');
+  const [showEmailDropdown, setShowEmailDropdown] = useState(false);
 
   const [formData, setFormData] = useState<Omit<Channel, 'id'>>({
     channelCode: '', name: '', url: '', avatarUrl: '', subscribers: 0, totalViews: 0, topicIds: [], status: 'active', notes: '',
@@ -699,6 +706,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       setEditingStaffIds(assignedToChannel);
       const matchedEmail = managedEmails.find(em => em.email === channel.email);
       setSelectedManagedEmailId(matchedEmail ? matchedEmail.id : '');
+      setEmailSearchTerm(matchedEmail ? `${matchedEmail.email} ${matchedEmail.channelCode ? `(${matchedEmail.channelCode})` : ''}` : channel.email || '');
     } else {
       setEditingChannel(null);
       setFormData({
@@ -711,7 +719,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       const defaultStaffIds = currentUser && currentUser.role !== 'admin' ? [currentUser.id] : [];
       setEditingStaffIds(defaultStaffIds);
       setSelectedManagedEmailId('');
+      setEmailSearchTerm('');
     }
+    setSourceCountryFilter('all');
+    setSourceTopicFilter('all');
+    setNewSourceChannelUrl('');
+    setShowEmailDropdown(false);
     setIsModalOpen(true);
   };
 
@@ -803,13 +816,83 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
       finalStaffIds.push(currentUser.id);
     }
 
+    let finalLinkedSourceIds = [...(formData.linkedSourceChannelIds || [])];
+    if (newSourceChannelUrl && setSourceChannels) {
+      const isDupSource = sourceChannels.some(sc => sc.url.toLowerCase() === newSourceChannelUrl.toLowerCase());
+      if (!isDupSource) {
+        const newSourceId = crypto.randomUUID();
+        const newSource: SourceChannel = {
+          id: newSourceId,
+          name: 'Nguồn Mới (Đang cập nhật)',
+          url: newSourceChannelUrl,
+          topicIds: formData.topicIds || [],
+          rating: 3,
+          uploadFrequency: 'Medium',
+          averageViews: 0,
+          notes: 'Thêm tự động từ tạo kênh',
+          allowedStaffIds: finalStaffIds
+        };
+        setSourceChannels(prev => [...prev, newSource]);
+        finalLinkedSourceIds.push(newSourceId);
+        supabase.from('source_channels').insert([{
+           id: newSourceId,
+           name: newSource.name,
+           url: newSource.url,
+           topic_ids: newSource.topicIds,
+           rating: newSource.rating,
+           upload_frequency: newSource.uploadFrequency,
+           average_views: newSource.averageViews,
+           notes: newSource.notes,
+           allowed_staff_ids: newSource.allowedStaffIds,
+           status: 'active'
+        }]).then();
+      }
+    }
+
     if (editingChannel) {
-      setChannels(prev => prev.map(c => c.id === editingChannel.id ? { ...c, ...formData } : c));
+      setChannels(prev => prev.map(c => c.id === editingChannel.id ? { ...c, ...formData, linkedSourceChannelIds: finalLinkedSourceIds } : c));
       updateStaffChannelAssignment(editingChannel.id, finalStaffIds);
+      supabase.from('channels').update({
+        channel_code: finalChannelCode,
+        name: formData.name,
+        url: formData.url,
+        avatar_url: formData.avatarUrl,
+        subscribers: formData.subscribers,
+        total_views: formData.totalViews,
+        topic_ids: formData.topicIds,
+        status: formData.status,
+        notes: formData.notes,
+        email: formData.email,
+        password: formData.password,
+        recovery_email: formData.recoveryEmail,
+        two_factor_code: formData.twoFactorCode,
+        proxy_id: formData.proxyId,
+        posting_schedules: formData.postingSchedules,
+        linked_source_channel_ids: finalLinkedSourceIds
+      }).eq('id', editingChannel.id).then();
       showToast('Đã cập nhật thông tin kênh thành công!', 'success');
     } else {
-      setChannels(prev => [...prev, { id: channelIdToUse, ...formData }]);
+      setChannels(prev => [...prev, { id: channelIdToUse, ...formData, linkedSourceChannelIds: finalLinkedSourceIds }]);
       updateStaffChannelAssignment(channelIdToUse, finalStaffIds);
+      supabase.from('channels').insert([{
+        id: channelIdToUse,
+        channel_code: finalChannelCode,
+        name: formData.name,
+        url: formData.url,
+        avatar_url: formData.avatarUrl,
+        subscribers: formData.subscribers,
+        total_views: formData.totalViews,
+        topic_ids: formData.topicIds,
+        status: formData.status,
+        notes: formData.notes,
+        email: formData.email,
+        password: formData.password,
+        recovery_email: formData.recoveryEmail,
+        two_factor_code: formData.twoFactorCode,
+        proxy_id: formData.proxyId,
+        posting_schedules: formData.postingSchedules,
+        linked_source_channel_ids: finalLinkedSourceIds
+      }]).then();
       showToast('Đã thêm kênh mới thành công!', 'success');
     }
 
@@ -1090,6 +1173,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                 <th className="p-4 font-medium min-w-[200px]">Nguồn liên kết</th>
                 <th className="p-4 font-medium">Proxy/VPS</th>
                 <th className="p-4 font-medium">Trạng thái</th>
+                <th className="p-4 font-medium">Views Báo Cáo</th>
                 <th className="p-4 font-medium text-right">Thao tác</th>
               </tr>
             </thead>
@@ -1225,6 +1309,20 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                         }`}>
                         {channel.status === 'active' ? 'Hoạt động' : channel.status === 'suspended' ? 'Bị đình chỉ' : channel.status === 'dead' ? 'Bị YouTube xóa' : 'Tạm ngưng'}
                       </span>
+                    </td>
+                    <td className="p-4">
+                      {(() => {
+                        const metrics = channelMetrics.filter(m => m.channelId === channel.id);
+                        if (metrics.length === 0) return <span className="text-gray-400 text-sm">Chưa có</span>;
+                        metrics.sort((a, b) => new Date(b.reportDate).getTime() - new Date(a.reportDate).getTime());
+                        const latest = metrics[0];
+                        return (
+                           <div className="flex flex-col">
+                             <span className="font-medium text-gray-900">{latest.views.toLocaleString()}</span>
+                             <span className="text-[10px] text-gray-500">{new Date(latest.reportDate).toLocaleDateString('vi-VN')}</span>
+                           </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex justify-end space-x-2">
@@ -1421,28 +1519,52 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                     <Mail size={16} className="mr-2" /> Liên kết Email từ kho
                     {selectedManagedEmailId && <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">✓ Đã chọn</span>}
                   </h3>
-                  <select
-                    value={selectedManagedEmailId}
-                    onChange={(e) => {
-                       const val = e.target.value;
-                       setSelectedManagedEmailId(val);
-                       if (val !== '') {
-                          const em = managedEmails?.find(m => m.id === val);
-                          if (em) setFormData(prev => ({ ...prev, email: em.email, password: em.password || prev.password, recoveryEmail: em.recoveryEmail || prev.recoveryEmail, twoFactorCode: em.twoFactorAuth || prev.twoFactorCode }));
-                       } else {
-                          setFormData(prev => ({ ...prev, email: '', password: '', recoveryEmail: '', twoFactorCode: '' }));
-                       }
-                    }}
-                    className="w-full border border-blue-200 rounded-lg px-3 py-2 focus:ring-blue-500 bg-white"
-                  >
-                     <option value="">-- Chọn email từ kho đã gán --</option>
-                     {managedEmails?.filter(m => !channels.some(c => c.email?.toLowerCase() === m.email.toLowerCase() && c.id !== editingChannel?.id)).map(em => (
-                        <option key={em.id} value={em.id}>{em.email} {em.channelCode ? `(Mã dự kiến: ${em.channelCode})` : ''}</option>
-                     ))}
-                  </select>
-                  {selectedManagedEmailId === '' && (
-                     <input type="email" placeholder="Hoặc nhập email thủ công" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })} className="w-full border border-blue-200 rounded-lg px-3 py-2 focus:ring-blue-500 bg-white mt-2" />
-                  )}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Tìm theo email hoặc mã kênh (VD: TC23)..."
+                      value={emailSearchTerm}
+                      onChange={e => {
+                        setEmailSearchTerm(e.target.value);
+                        setShowEmailDropdown(true);
+                        const matched = managedEmails?.find(m => m.email.toLowerCase() === e.target.value.toLowerCase());
+                        if (!matched) {
+                           setSelectedManagedEmailId('');
+                           setFormData(prev => ({ ...prev, email: e.target.value }));
+                        }
+                      }}
+                      onFocus={() => setShowEmailDropdown(true)}
+                      className="w-full border border-blue-200 rounded-lg px-3 py-2 focus:ring-blue-500 bg-white"
+                    />
+                    {showEmailDropdown && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-blue-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                        {managedEmails?.filter(m => !channels.some(c => c.email?.toLowerCase() === m.email.toLowerCase() && c.id !== editingChannel?.id))
+                          .filter(m => m.email.toLowerCase().includes(emailSearchTerm.toLowerCase()) || (m.channelCode || '').toLowerCase().includes(emailSearchTerm.toLowerCase()))
+                          .map(em => (
+                            <div
+                              key={em.id}
+                              className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm"
+                              onClick={() => {
+                                setSelectedManagedEmailId(em.id);
+                                setEmailSearchTerm(`${em.email} ${em.channelCode ? `(${em.channelCode})` : ''}`);
+                                setFormData(prev => ({ ...prev, email: em.email, password: em.password || prev.password, recoveryEmail: em.recoveryEmail || prev.recoveryEmail, twoFactorCode: em.twoFactorAuth || prev.twoFactorCode }));
+                                setShowEmailDropdown(false);
+                              }}
+                            >
+                              <div className="font-medium text-gray-900">{em.email}</div>
+                              {em.channelCode && <div className="text-xs text-gray-500">Mã kênh: {em.channelCode}</div>}
+                            </div>
+                        ))}
+                        {managedEmails?.filter(m => !channels.some(c => c.email?.toLowerCase() === m.email.toLowerCase() && c.id !== editingChannel?.id))
+                          .filter(m => m.email.toLowerCase().includes(emailSearchTerm.toLowerCase()) || (m.channelCode || '').toLowerCase().includes(emailSearchTerm.toLowerCase())).length === 0 && (
+                          <div className="px-3 py-2 text-sm text-gray-500 italic">Không tìm thấy email nào phù hợp</div>
+                        )}
+                        <div className="px-3 py-2 text-xs text-blue-600 bg-blue-50 cursor-pointer hover:bg-blue-100 border-t border-blue-100" onClick={() => setShowEmailDropdown(false)}>
+                          Đóng
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   {managedEmails?.length === 0 && (
                     <p className="text-xs text-blue-600 italic mt-2">Chưa có email nào được gán. Liên hệ quản lý để được cấp email.</p>
                   )}
@@ -1583,29 +1705,62 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                     )}
                   </h3>
 
-                  {/* Bộ lọc theo chủ đề */}
+                  {/* Bộ lọc kênh nguồn */}
+                  <div className="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">Lọc theo Quốc gia</label>
+                      <select
+                        value={sourceCountryFilter}
+                        onChange={e => setSourceCountryFilter(e.target.value)}
+                        className="w-full border border-emerald-200 rounded-lg px-3 py-2 focus:ring-emerald-500 bg-white text-sm"
+                      >
+                        <option value="all">-- Tất cả quốc gia --</option>
+                        {Array.from(new Set(topics.map(t => t.country).filter(Boolean))).map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">Lọc theo Chủ đề</label>
+                      <select
+                        value={sourceTopicFilter}
+                        onChange={e => setSourceTopicFilter(e.target.value)}
+                        className="w-full border border-emerald-200 rounded-lg px-3 py-2 focus:ring-emerald-500 bg-white text-sm"
+                      >
+                        <option value="all">-- Tất cả chủ đề --</option>
+                        {topics
+                          .filter(t => sourceCountryFilter === 'all' || t.country === sourceCountryFilter)
+                          .map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Dán link để thêm tự động */}
                   <div className="mb-3">
-                    <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">Lọc theo Chủ đề</label>
-                    <select
-                      value={sourceTopicFilter}
-                      onChange={e => setSourceTopicFilter(e.target.value)}
-                      className="w-full border border-emerald-200 rounded-lg px-3 py-2 focus:ring-emerald-500 bg-white text-sm"
-                    >
-                      <option value="all">-- Tất cả chủ đề --</option>
-                      {topics.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                    </select>
+                    <label className="block text-[10px] font-bold text-emerald-700 uppercase mb-1">Hoặc dán link kênh nguồn mới</label>
+                    <div className="flex space-x-2">
+                      <input
+                        type="url"
+                        placeholder="https://youtube.com/..."
+                        value={newSourceChannelUrl}
+                        onChange={e => setNewSourceChannelUrl(e.target.value)}
+                        className="flex-1 border border-emerald-200 rounded-lg px-3 py-2 text-sm focus:ring-emerald-500"
+                      />
+                    </div>
                   </div>
 
                   {/* Danh sách kênh nguồn để chọn */}
                   <div className="max-h-48 overflow-y-auto space-y-1.5 mb-3 pr-1">
                     {sourceChannels
                       .filter(sc => {
-                        // Lọc theo chủ đề
+                        // Lọc theo chủ đề và quốc gia
                         const matchesTopic = sourceTopicFilter === 'all' || (sc.topicIds || []).includes(sourceTopicFilter);
+                        const scCountry = (sc.topicIds || []).map(tid => topics.find(t => t.id === tid)?.country).filter(Boolean)[0];
+                        const matchesCountry = sourceCountryFilter === 'all' || scCountry === sourceCountryFilter;
                         // Lọc theo quyền: admin thấy tất cả, member chỉ thấy kênh được giao
                         const matchesPermission = currentUser?.role === 'admin' || currentUser?.role === 'manager'
                           || (sc.allowedStaffIds || []).includes(currentUser?.id || '');
-                        return matchesTopic && matchesPermission;
+                        return matchesTopic && matchesCountry && matchesPermission;
                       })
                       .map(sc => {
                         const isLinked = (formData.linkedSourceChannelIds || []).includes(sc.id);
@@ -1724,12 +1879,26 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                       <Sparkles size={12} className="mr-1" /> AI Gợi ý tag
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {topics.map(topic => (
+                  <div className="mb-2">
+                    <input
+                      type="text"
+                      placeholder="Tìm kiếm chủ đề..."
+                      value={topicSearchTerm}
+                      onChange={e => setTopicSearchTerm(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-1">
+                    {topics
+                      .filter(topic => topic.name.toLowerCase().includes(topicSearchTerm.toLowerCase()))
+                      .map(topic => (
                       <button key={topic.id} type="button" onClick={() => toggleTopic(topic.id)} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${formData.topicIds.includes(topic.id) ? 'border-transparent text-white' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`} style={formData.topicIds.includes(topic.id) ? { backgroundColor: topic.color } : {}}>
                         {topic.name}
                       </button>
                     ))}
+                    {topics.filter(topic => topic.name.toLowerCase().includes(topicSearchTerm.toLowerCase())).length === 0 && (
+                      <span className="text-sm text-gray-500 italic">Không tìm thấy chủ đề nào</span>
+                    )}
                   </div>
                 </div>
 

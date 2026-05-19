@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS staff_list (
   status TEXT DEFAULT 'active' CHECK (status IN ('online', 'offline', 'inactive')),
   base_salary NUMERIC DEFAULT 0,
   managed_email_count INTEGER DEFAULT 0,
+  last_login_at TEXT,
   kpi_targets JSONB DEFAULT '{"daily": 0, "weekly": 0, "monthly": 0}'::jsonb,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -85,6 +86,8 @@ CREATE TABLE IF NOT EXISTS channels (
   proxy_id TEXT,
   posting_schedules JSONB DEFAULT '[]'::jsonb,
   linked_source_channel_ids TEXT[] DEFAULT '{}',
+  is_monetized BOOLEAN DEFAULT FALSE,
+  monetization_date TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -173,6 +176,20 @@ CREATE TABLE IF NOT EXISTS financials (
   notes TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(channel_id, month) -- Mỗi kênh chỉ có 1 report duy nhất cho mỗi tháng
+);
+
+-- 7B. BÁO CÁO DOANH THU & VIEW HÀNG NGÀY CHO KÊNH BKT (channel_metrics)
+CREATE TABLE IF NOT EXISTS channel_metrics (
+  id TEXT PRIMARY KEY,
+  channel_id TEXT REFERENCES channels(id) ON DELETE CASCADE,
+  report_date TEXT NOT NULL,
+  views BIGINT DEFAULT 0,
+  revenue_usd NUMERIC DEFAULT 0,
+  revenue_vnd NUMERIC DEFAULT 0,
+  exchange_rate NUMERIC DEFAULT 25000,
+  updated_by TEXT REFERENCES staff_list(id) ON DELETE SET NULL,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(channel_id, report_date)
 );
 
 

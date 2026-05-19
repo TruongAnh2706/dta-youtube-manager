@@ -4,6 +4,23 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.0.4] - 2026-05-19
+### 🐛 Sửa lỗi & Tối ưu hóa (Bug Fixes & Optimizations)
+- **Sửa lỗi TypeScript và Build Dự án:** Khắc phục triệt để các lỗi TypeScript ngăn cản dự án build thành công:
+  - Import đầy đủ kiểu dữ liệu `ChannelMetric` trong file `src/components/Channels.tsx`.
+  - Khai báo các trường bổ sung cho kiểu dữ liệu `VideoTask` (`description`, `creatorId`, `createdAt`, `updatedAt`, `tags`, `projectType`) trong `src/types.ts`.
+  - Loại bỏ thuộc tính `title` không hợp lệ trên icon Lucide `AlertCircle` trong `src/components/TaskManager.tsx` bằng cách bọc ngoài với thẻ `span`.
+- **Hoàn tất Build Production:** Đảm bảo dự án build thành công 100% không còn lỗi biên dịch (Exit code 0).
+
+## [1.0.3] - 2026-05-19
+### 🚀 Tính năng mới (Features)
+- **Báo cáo Kênh Bật Kiếm Tiền (Monetization Report):** Thêm tính năng quản lý View và Doanh thu hàng ngày (Realtime quy đổi USD sang VNĐ). Hỗ trợ đánh dấu/bỏ đánh dấu kênh bật kiếm tiền, tự động khóa nhập liệu theo độ trễ của YouTube (Views trễ 1 ngày, Doanh thu trễ 2 ngày), cảnh báo bôi đỏ khi nhân viên quên báo cáo.
+- **Ghi chú Lỗi Tích hợp (Bug Reporter):** Bổ sung nút floating "Ghi chú Lỗi" ở góc dưới màn hình. Tự động nhận diện tab đang thao tác, lưu trữ ghi chú offline vào localStorage, hỗ trợ nút "Copy gửi AI" giúp biên soạn nhanh danh sách công việc cần sửa.
+
+### 🐛 Sửa lỗi & Tối ưu hóa (Bug Fixes & Optimizations)
+- **Theo dõi Đăng nhập HRM:** Bổ sung trường `last_login_at` vào cơ sở dữ liệu và tự động cập nhật thời gian đăng nhập gần nhất của nhân sự.
+- **Tối ưu hóa Giao diện và Cấu trúc Dữ liệu:** Đồng bộ hóa lại việc hiển thị phân quyền kênh và chủ đề, hạn chế tối đa xung đột khi nhân viên thao tác đồng thời. Bổ sung bảng `channel_metrics` để lưu trữ dữ liệu báo cáo BKT an toàn trên Supabase.
+
 ## [1.0.2] - 2026-05-18
 ### 🐛 Sửa lỗi (Bug Fixes)
 - **Kênh Nguồn (Source Channels):** Sửa lỗi mất dữ liệu phân quyền nhân sự khi reload trang (F5). Bổ sung schema `status` và `last_health_check` cho bảng `source_channels` để khắc phục lỗi Crash lúc AutoSave đẩy dữ liệu lên Supabase.

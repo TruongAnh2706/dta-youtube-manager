@@ -18,6 +18,7 @@
     "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
-    "google-trends-api": "^4.9.2"
+    "google-trends-api": "^4.9.2",
+    "node-cron": "^4.2.1"
   }
 }

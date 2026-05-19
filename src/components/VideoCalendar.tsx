@@ -520,23 +520,29 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
                 const todayTasks = viewableTasks.filter(t => (t.assigneeIds || []).includes(staff.id) && isSameDay(new Date(t.dueDate), today));
                 const completedToday = todayTasks.length > 0 && todayTasks.every(t => t.status === 'published');
                 const hasTasksToday = todayTasks.length > 0;
+                
+                // Xác định trạng thái nghỉ dựa trên log đăng nhập
+                const isOnlineToday = staff.lastLoginAt && isSameDay(new Date(staff.lastLoginAt), today);
+                const isOfflineToday = !isOnlineToday;
 
                 return (
                   <div key={staff.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 border border-gray-100">
                     <div className="flex items-center min-w-0">
-                      <div className={`w-2 h-2 rounded-full mr-2 shrink-0 ${!hasTasksToday ? 'bg-gray-300' : completedToday ? 'bg-green-500' : 'bg-orange-500'
-                        }`} />
+                      <div className={`w-2 h-2 rounded-full mr-2 shrink-0 ${isOfflineToday ? 'bg-gray-300' : completedToday ? 'bg-green-500' : 'bg-orange-500'
+                        }`} title={staff.lastLoginAt ? `Đăng nhập lần cuối: ${format(new Date(staff.lastLoginAt), 'HH:mm dd/MM/yyyy')}` : 'Chưa đăng nhập bao giờ'} />
                       <span className="text-xs font-medium text-gray-700 truncate">{staff.name}</span>
                     </div>
                     <div className="flex items-center shrink-0 ml-2">
-                      {hasTasksToday ? (
+                      {isOfflineToday ? (
+                        <span className="text-[10px] text-gray-400 italic" title="Chưa đăng nhập hệ thống hôm nay">Nghỉ</span>
+                      ) : hasTasksToday ? (
                         completedToday ? (
                           <span className="text-[10px] font-bold text-green-600 bg-green-100 px-1.5 py-0.5 rounded">Xong</span>
                         ) : (
                           <span className="text-[10px] font-bold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded">Đang làm</span>
                         )
                       ) : (
-                        <span className="text-[10px] text-gray-400 italic">Nghỉ</span>
+                        <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">Online</span>
                       )}
                     </div>
                   </div>

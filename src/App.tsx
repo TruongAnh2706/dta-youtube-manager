@@ -19,12 +19,14 @@ import { AssetManager } from './components/AssetManager';
 import { ToolManager } from './components/ToolManager';
 import { SeoAi } from './components/SeoAi';
 import { AutoSaveService } from './components/AutoSaveService';
+import { MonetizationReport } from './components/MonetizationReport';
 import { AdminSettings } from './components/AdminSettings';
 import { PermissionSettings } from './components/PermissionSettings';
 import { Login } from './components/Login';
 import { ScheduleAlarm } from './components/ScheduleAlarm';
 import { ReportsDashboard } from './components/ReportsDashboard';
 import { ChangelogModal } from './components/ChangelogModal';
+import { BugReporter } from './components/BugReporter';
 import { LayoutDashboard, Youtube, Hash, Menu, Link as LinkIcon, Users, LineChart, Calendar as CalendarIcon, DollarSign, ShieldAlert, HardDrive, Wrench, Sparkles, Eye, EyeOff, Bell, Crosshair, LogOut, Database, Settings, ShieldCheck, Briefcase, Mail, ChevronDown, ChevronRight, FolderOpen, Search, Compass, BarChart3, PieChart } from 'lucide-react';
 import { RolePermissions, PermissionKey, StaffRole } from './types';
 
@@ -43,6 +45,7 @@ function AppContent() {
     assets, setAssets, proxies, setProxies,
     licenses, setLicenses, competitors, setCompetitors,
     managedEmails, setManagedEmails,
+    channelMetrics, setChannelMetrics,
     systemSettings, setSystemSettings,
     activeYoutubeKey, activeGeminiKey, rotateYoutubeKey,
     handleRemoteUpdate, appData
@@ -209,6 +212,7 @@ function AppContent() {
       items: [
         { id: 'reports_dashboard', label: 'Báo cáo Tổng thể', icon: BarChart3, permission: 'reports_view_all' },
         { id: 'finance', label: 'Tài chính (P&L)', icon: DollarSign, permission: 'finance_view' },
+        { id: 'monetization_report', label: 'Báo cáo BKT', icon: DollarSign, permission: 'finance_view' },
         { id: 'staff', label: 'Nhân sự (HRM)', icon: Users, permission: 'staff_view' },
       ]
     },
@@ -355,7 +359,7 @@ function AppContent() {
             <div className="mb-3 flex justify-between items-center text-[10px] text-gray-500 font-mono border-b border-gray-800 pb-2">
               <span className="flex items-center gap-1">
                 <Sparkles size={10} className="text-blue-400" />
-                {`v${import.meta.env.VITE_APP_VERSION || '1.0.2'}`}
+                {`v${import.meta.env.VITE_APP_VERSION || '1.0.3'}`}
               </span>
               <span>{import.meta.env.VITE_APP_BUILD_DATE || new Date().toLocaleDateString('vi-VN')}</span>
             </div>
@@ -449,17 +453,19 @@ function AppContent() {
                   setTasks={setTasks}
                   systemSettings={systemSettings}
                   channels={viewableChannels}
+                  privacyMode={privacyMode}
                 />
               )}
               {activeTab === 'channels' && (
                 <Channels
                   channels={viewableChannels}
                   setChannels={setChannels}
-                  topics={viewableTopics}
+                  topics={topics}
                   setTopics={setTopics}
                   proxies={proxies}
                   privacyMode={privacyMode}
-                  sourceChannels={viewableSourceChannels}
+                  sourceChannels={sourceChannels}
+                  setSourceChannels={setSourceChannels}
                   youtubeApiKey={activeYoutubeKey}
                   geminiApiKey={activeGeminiKey}
                   rotateYoutubeKey={rotateYoutubeKey}
@@ -468,8 +474,9 @@ function AppContent() {
                   setStaffList={setStaffList}
                   financials={viewableFinancials}
                   strikes={viewableStrikes}
-                  managedEmails={viewableEmails}
+                  managedEmails={managedEmails}
                   setManagedEmails={setManagedEmails}
+                  channelMetrics={channelMetrics}
                 />
               )}
               {activeTab === 'topics' && (
@@ -571,6 +578,15 @@ function AppContent() {
                   geminiApiKey={activeGeminiKey}
                 />
               )}
+              {activeTab === 'monetization_report' && (
+                <MonetizationReport
+                  channels={viewableChannels}
+                  metrics={channelMetrics}
+                  currentStaff={currentStaff}
+                  isAdmin={currentUser?.role === 'admin' || currentUser?.role === 'manager'}
+                  staffList={staffList}
+                />
+              )}
               {activeTab === 'copyright' && (
                 <CopyrightManager strikes={viewableStrikes} setStrikes={setStrikes} channels={viewableChannels} geminiApiKey={activeGeminiKey} />
               )}
@@ -597,6 +613,7 @@ function AppContent() {
         </main>
       </div>
       <ChangelogModal />
+      <BugReporter activeTab={activeTab} />
     </PermissionsProvider>
   );
 }
