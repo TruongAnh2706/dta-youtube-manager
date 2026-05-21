@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import * as XLSX from 'xlsx';
+import { getSafeTopicColor } from '../lib/color';
 
 interface TopicsProps {
   topics: Topic[];
@@ -184,7 +185,21 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
             description: row['Mô tả'] || row.description || '',
             tags: (row['Tags'] || row.tags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
             hashtags: (row['Hashtags'] || row.hashtags || '').split(',').map((t: string) => t.trim()).filter(Boolean),
-            color: '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0'),
+            color: (() => {
+              const dtaColors = [
+                '#008080', '#0066cc', '#0088cc', '#cc0000', '#9900cc', 
+                '#cc0066', '#e65c00', '#008000', '#b38600', '#595959', 
+                '#003366', '#660066', '#808000', '#0059b3', '#993366',
+                '#4d0099', '#3b7a57', '#9f1d35', '#2e5894', '#662200'
+              ];
+              if (Math.random() < 0.7) {
+                return dtaColors[Math.floor(Math.random() * dtaColors.length)];
+              }
+              const r = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+              const g = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+              const b = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+              return `#${r}${g}${b}`;
+            })(),
           };
 
           // Direct upsert vào Supabase ngay lập tức (tránh mất data)
@@ -362,7 +377,7 @@ export function Topics({ topics = [], setTopics, staffList, channels, sourceChan
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center font-medium text-gray-900">
-                            <span className="w-3 h-3 rounded-full mr-2 shadow-sm" style={{ backgroundColor: topic.color }}></span>
+                            <span className="w-3 h-3 rounded-full mr-2 shadow-sm" style={{ backgroundColor: getSafeTopicColor(topic.color) }}></span>
                             {topic.name}
                           </div>
                         </td>

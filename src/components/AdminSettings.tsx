@@ -2,10 +2,13 @@ import React, { useState } from 'react';
 import { SystemSettings, ApiKey, CustomStatus } from '../types';
 import { 
   Plus, Trash2, Key, Youtube, Sparkles, Save, AlertCircle, 
-  CheckCircle2, RefreshCw, ShieldCheck, Database, ShieldAlert, SlidersHorizontal
+  CheckCircle2, RefreshCw, ShieldCheck, Database, ShieldAlert, SlidersHorizontal,
+  Send, MessageCircle
 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
+import { sendTelegramMessage } from '../services/telegram';
+import { sendZaloMessage } from '../services/zalo';
 
 interface AdminSettingsProps {
   settings: SystemSettings;
@@ -24,6 +27,50 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
   const [newStatusLabel, setNewStatusLabel] = useState('');
   const [newStatusId, setNewStatusId] = useState('');
   const [newStatusColor, setNewStatusColor] = useState('bg-gray-100 text-gray-700');
+
+  // Telegram & Zalo Settings State
+  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [testingZalo, setTestingZalo] = useState(false);
+
+  const handleTestTelegram = async () => {
+    if (!settings.telegramBotToken || !settings.telegramChatId) {
+      showToast('Vui lòng điền đầy đủ Token và Chat ID trước khi test!', 'error');
+      return;
+    }
+    setTestingTelegram(true);
+    const success = await sendTelegramMessage(
+      `🔔 <b>DTA STUDIO - KẾT NỐI THỬ NGHIỆM</b> 🔔\n\n---------------------------------------------\n✅ Cấu hình Telegram Bot trên DTA YouTube Manager đã kết nối thành công!\n⏰ <b>Thời gian test:</b> ${new Date().toLocaleString('vi-VN')}\n---------------------------------------------\nPhát triển bởi <b>DTA Studio</b> - Đức Trường AI (0962.775.506)`,
+      settings
+    );
+    setTestingTelegram(false);
+    if (success) {
+      showToast('Gửi tin nhắn test thành công! Hãy kiểm tra Telegram.', 'success');
+    } else {
+      showToast('Gửi tin nhắn test thất bại! Vui lòng kiểm tra lại Token & Chat ID.', 'error');
+    }
+  };
+
+  const handleTestZalo = async () => {
+    if (!settings.zaloEnabled) {
+      showToast('Vui lòng kích hoạt Zalo trước khi test!', 'error');
+      return;
+    }
+    if (!settings.zaloApiUrl && (!settings.zaloAccessToken || !settings.zaloPhoneOrGroupId)) {
+      showToast('Vui lòng điền Webhook URL hoặc (Access Token + ID người nhận) trước khi test!', 'error');
+      return;
+    }
+    setTestingZalo(true);
+    const success = await sendZaloMessage(
+      `🔔 DTA STUDIO - KẾT NỐI THỬ NGHIỆM ZALO 🔔\n---------------------------------------------\n✅ Cấu hình thông báo Zalo trên DTA YouTube Manager đã hoạt động tốt!\n⏰ Thời gian test: ${new Date().toLocaleString('vi-VN')}\n---------------------------------------------\nPhát triển bởi DTA Studio - Đức Trường AI (0962.775.506)`,
+      settings
+    );
+    setTestingZalo(false);
+    if (success) {
+      showToast('Gửi tin nhắn test Zalo thành công! Hãy kiểm tra Zalo.', 'success');
+    } else {
+      showToast('Gửi tin nhắn test Zalo thất bại! Vui lòng kiểm tra lại cấu hình.', 'error');
+    }
+  };
 
   const COLORS = [
     { id: 'gray', class: 'bg-gray-100 text-gray-700', label: 'Xám sáng' },
@@ -373,6 +420,144 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
                 <span className="text-gray-600">Member</span>
                 <span className="text-gray-900">Xem Dashboard, Video & Tài nguyên</span>
               </div>
+            </div>
+          </div>
+
+          {/* Telegram Bot Settings (Premium DTA Studio) */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                <Send className="mr-2 text-cyan-500" size={20} /> Thông báo Telegram Bot
+              </h2>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={settings.telegramEnabled || false}
+                  onChange={e => setSettings(prev => ({ ...prev, telegramEnabled: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+              </label>
+            </div>
+            
+            <p className="text-xs text-gray-500">
+              Tự động gửi cảnh báo khẩn cấp qua Telegram Bot khi Proxy bị lỗi, kênh nhận gậy bản quyền mới hoặc trễ lịch đăng video quá 15 phút.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Telegram Bot Token</label>
+                <input 
+                  type="password" 
+                  value={settings.telegramBotToken || ''}
+                  onChange={e => setSettings(prev => ({ ...prev, telegramBotToken: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-cyan-500 focus:ring-cyan-500 font-mono"
+                  placeholder="123456789:ABCdefGhIJKlmNoPQRsT..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">Telegram Chat ID</label>
+                <input 
+                  type="text" 
+                  value={settings.telegramChatId || ''}
+                  onChange={e => setSettings(prev => ({ ...prev, telegramChatId: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-cyan-500 focus:ring-cyan-500 font-mono"
+                  placeholder="-100123456789 hoặc ID cá nhân..."
+                />
+              </div>
+
+              <button 
+                onClick={handleTestTelegram}
+                disabled={testingTelegram}
+                className="w-full mt-2 py-2 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg text-sm font-semibold transition-all hover:opacity-90 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
+              >
+                <Send size={16} className={testingTelegram ? 'animate-bounce' : ''} />
+                {testingTelegram ? 'Đang gửi...' : 'Gửi tin nhắn test'}
+              </button>
+            </div>
+            <div className="pt-2 border-t border-gray-100 flex justify-between items-center text-[10px] text-gray-400">
+              <span>Phát triển bởi DTA Studio</span>
+              <a href="https://dta-studio.vercel.app/" target="_blank" rel="noreferrer" className="hover:text-cyan-500 transition-colors font-semibold">Đức Trường</a>
+            </div>
+          </div>
+
+          {/* Zalo Bot Settings (Premium DTA Studio) */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+                <MessageCircle className="mr-2 text-blue-600 animate-pulse" size={20} /> Thông báo Zalo Bot
+              </h2>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={settings.zaloEnabled || false}
+                  onChange={e => setSettings(prev => ({ ...prev, zaloEnabled: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+            
+            <p className="text-xs text-gray-500">
+              Tự động gửi cảnh báo qua Zalo (song song với Telegram) khi phát hiện Proxy chết, kênh nhận gậy bản quyền mới hoặc trễ lịch đăng video quá 15 phút.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">Cách A: Zalo Webhook 3rd Party</label>
+                  <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-semibold">Khuyên dùng</span>
+                </div>
+                <input 
+                  type="text" 
+                  value={settings.zaloApiUrl || ''}
+                  onChange={e => setSettings(prev => ({ ...prev, zaloApiUrl: e.target.value }))}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-600 focus:ring-blue-600 font-mono"
+                  placeholder="https://api.webhook.vn/zalo/send/..."
+                />
+                <span className="text-[10px] text-gray-400 mt-1 block">Dành cho dịch vụ Zalo Solution, Webhook.vn hoặc bot tự host để gửi vào group chat Zalo.</span>
+              </div>
+
+              <div className="border-t border-gray-100 pt-3 space-y-3">
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">Cách B: Zalo OA Chat API Chính thống</label>
+                
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Zalo OA Access Token</label>
+                  <input 
+                    type="password" 
+                    value={settings.zaloAccessToken || ''}
+                    onChange={e => setSettings(prev => ({ ...prev, zaloAccessToken: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-600 focus:ring-blue-600 font-mono"
+                    placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVC..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-medium text-gray-500 mb-0.5">Zalo Recipient ID (SĐT hoặc User ID)</label>
+                  <input 
+                    type="text" 
+                    value={settings.zaloPhoneOrGroupId || ''}
+                    onChange={e => setSettings(prev => ({ ...prev, zaloPhoneOrGroupId: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-600 focus:ring-blue-600 font-mono"
+                    placeholder="VD: 84962775506 hoặc ID người dùng..."
+                  />
+                </div>
+              </div>
+
+              <button 
+                onClick={handleTestZalo}
+                disabled={testingZalo || !settings.zaloEnabled}
+                className="w-full mt-2 py-2 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 disabled:from-gray-300 disabled:to-gray-400 text-white rounded-lg text-sm font-semibold transition-all hover:opacity-90 active:scale-95 flex items-center justify-center gap-2 shadow-sm"
+              >
+                <Send size={16} className={testingZalo ? 'animate-bounce' : ''} />
+                {testingZalo ? 'Đang gửi...' : 'Gửi tin nhắn test Zalo'}
+              </button>
+            </div>
+            
+            <div className="pt-2 border-t border-gray-100 flex justify-between items-center text-[10px] text-gray-400">
+              <span>Phát triển bởi DTA Studio</span>
+              <a href="https://dta-studio.vercel.app/" target="_blank" rel="noreferrer" className="hover:text-blue-600 transition-colors font-semibold">Đức Trường</a>
             </div>
           </div>
         </div>

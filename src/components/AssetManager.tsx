@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Asset, AssetType, Proxy, Topic, ManagedEmail, Staff } from '../types';
+import { Asset, AssetType, Proxy, Topic, ManagedEmail, Staff, SystemSettings } from '../types';
 import { Plus, Edit2, Trash2, X, HardDrive, Video, Music, LayoutTemplate, Globe, Server, Type, Film, ExternalLink, RefreshCw, AlertCircle, Sparkles, Calendar, BrainCircuit, Mail, Copy, Check, Eye, EyeOff } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
 import { usePermissions } from '../hooks/usePermissions';
 import { supabase } from '../lib/supabase';
+import { sendProxyAlert } from '../services/telegram';
+import { sendZaloProxyAlert } from '../services/zalo';
 
 interface AssetManagerProps {
   assets: Asset[];
@@ -16,6 +18,7 @@ interface AssetManagerProps {
   managedEmails: ManagedEmail[];
   setManagedEmails: React.Dispatch<React.SetStateAction<ManagedEmail[]>>;
   staffList: Staff[];
+  settings?: SystemSettings;
 }
 
 const ASSET_TYPES: { id: AssetType; label: string; icon: React.ElementType; color: string }[] = [
@@ -28,7 +31,7 @@ const ASSET_TYPES: { id: AssetType; label: string; icon: React.ElementType; colo
   { id: 'license', label: 'License / Bản quyền', icon: Calendar, color: 'text-amber-600 bg-amber-50' },
 ];
 
-export function AssetManager({ assets, setAssets, proxies, setProxies, topics, geminiApiKey, managedEmails, setManagedEmails, staffList }: AssetManagerProps) {
+export function AssetManager({ assets, setAssets, proxies, setProxies, topics, geminiApiKey, managedEmails, setManagedEmails, staffList, settings }: AssetManagerProps) {
   const { showToast } = useToast();
   const { hasPermission } = usePermissions();
   const [activeTab, setActiveTab] = useState<'assets' | 'proxies' | 'emails'>('assets');
@@ -349,17 +352,37 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                   
                   if (error || !data?.results) throw error || new Error("No results");
                   
-                  // Cập nhật trạng thái từ kết quả trả về của Edge Function
-                  setProxies(prev => prev.map(p => {
-                    const result = data.results.find((r: any) => r.id === p.id);
-                    return result ? { ...p, status: result.status } : p;
-                  }));
+                  // Cập nhật trạng thái từ kết quả trả về của Edge Function và gửi cảnh báo nếu proxy bị die
+                  setProxies(prev => {
+                    const nextProxies = prev.map(p => {
+                      const result = data?.results?.find((r: any) => r.id === p.id);
+                      if (result) {
+                        if (p.status !== 'dead' && result.status === 'dead') {
+                          sendProxyAlert(p.ip, p.port, p.notes, settings);
+                          sendZaloProxyAlert(p.ip, p.port, p.notes, settings);
+                        }
+                        return { ...p, status: result.status };
+                      }
+                      return p;
+                    });
+                    return nextProxies;
+                  });
                   showToast('Đã kiểm tra xong danh sách Proxy (Live Server)!', 'success');
                 } catch (error) {
                   console.error("Lỗi gọi Edge Function (Chưa deploy?), dùng fallback ảo:", error);
                   // Fallback nếu người dùng chưa deploy Edge Function
                   setTimeout(() => {
-                    setProxies(prev => prev.map(p => ({ ...p, status: Math.random() > 0.2 ? 'active' : 'dead' })));
+                    setProxies(prev => {
+                      const nextProxies = prev.map(p => {
+                        const newStatus = Math.random() > 0.2 ? 'active' : 'dead';
+                        if (p.status !== 'dead' && newStatus === 'dead') {
+                          sendProxyAlert(p.ip, p.port, p.notes, settings);
+                          sendZaloProxyAlert(p.ip, p.port, p.notes, settings);
+                        }
+                        return { ...p, status: newStatus as any };
+                      });
+                      return nextProxies;
+                    });
                     showToast('Đã kiểm tra xong danh sách Proxy (Fallback Ảo)!', 'success');
                     setIsCheckingProxies(false);
                   }, 1500);

@@ -51,6 +51,13 @@ export function BugReporter({ activeTab }: BugReporterProps) {
         localStorage.setItem('dta_bug_notes', JSON.stringify(updated));
     };
 
+    const clearAllNotes = () => {
+        if (window.confirm('Anh Trường có chắc chắn muốn XÓA SẠCH toàn bộ danh sách ghi chú lỗi & cập nhật này không?')) {
+            setNotes([]);
+            localStorage.removeItem('dta_bug_notes');
+        }
+    };
+
     const copyAllNotes = () => {
         const text = notes.map(n => `[Tab: ${n.tab}] ${new Date(n.date).toLocaleString('vi-VN')}\n- ${n.content}`).join('\n\n');
         navigator.clipboard.writeText(text);
@@ -110,13 +117,23 @@ export function BugReporter({ activeTab }: BugReporterProps) {
                             <div className="flex items-center justify-between mb-3">
                                 <h3 className="text-sm font-bold text-gray-700">Danh sách Ghi chú ({notes.length})</h3>
                                 {notes.length > 0 && (
-                                    <button
-                                        onClick={copyAllNotes}
-                                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium bg-blue-50 px-2 py-1 rounded"
-                                    >
-                                        {copied ? <Check size={14} /> : <Copy size={14} />} 
-                                        {copied ? 'Đã copy' : 'Copy gửi AI'}
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={copyAllNotes}
+                                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-medium bg-blue-50 px-2 py-1 rounded transition-all active:scale-95"
+                                        >
+                                            {copied ? <Check size={14} /> : <Copy size={14} />} 
+                                            {copied ? 'Đã copy' : 'Copy gửi AI'}
+                                        </button>
+                                        <button
+                                            onClick={clearAllNotes}
+                                            className="flex items-center gap-1 text-xs text-red-600 hover:text-red-700 font-medium bg-red-50 px-2 py-1 rounded transition-all active:scale-95"
+                                            title="Xóa sạch toàn bộ ghi chú"
+                                        >
+                                            <Trash2 size={14} />
+                                            Xóa sạch
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                             
@@ -125,19 +142,25 @@ export function BugReporter({ activeTab }: BugReporterProps) {
                             ) : (
                                 <div className="space-y-3">
                                     {notes.map(note => (
-                                        <div key={note.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm relative group">
-                                            <div className="flex justify-between items-start mb-1">
-                                                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-                                                    {note.tab}
-                                                </span>
+                                        <div key={note.id} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm relative group hover:border-gray-300 transition-all">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                                                        {note.tab}
+                                                    </span>
+                                                    <span className="text-[9px] text-gray-400 font-medium">
+                                                        {new Date(note.date).toLocaleDateString('vi-VN')} {new Date(note.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                    </span>
+                                                </div>
                                                 <button
                                                     onClick={() => deleteNote(note.id)}
-                                                    className="text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                                                    className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-md hover:bg-gray-100 active:scale-90"
+                                                    title="Xóa ghi chú này"
                                                 >
                                                     <Trash2 size={14} />
                                                 </button>
                                             </div>
-                                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.content}</p>
+                                            <p className="text-sm text-gray-800 whitespace-pre-wrap mt-1">{note.content}</p>
                                         </div>
                                     ))}
                                 </div>

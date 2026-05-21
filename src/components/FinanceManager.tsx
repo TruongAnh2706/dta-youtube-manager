@@ -314,7 +314,44 @@ export function FinanceManager({
   };
 
   const handleAutoCalculateSalary = () => {
-    // ... existing logic ...
+    if (!recordFormData.channelId) {
+      showToast('Vui lòng chọn kênh trước khi tính lương.', 'error');
+      return;
+    }
+
+    // Tìm các nhân sự quản lý kênh này
+    const managers = staffList.filter(s => s.assignedChannelIds && s.assignedChannelIds.includes(recordFormData.channelId));
+
+    // Tính lương phân bổ của từng nhân sự cho kênh này
+    let calculatedExpenses = 0;
+    managers.forEach(staff => {
+      const totalChannels = staff.assignedChannelIds.length;
+      if (totalChannels > 0) {
+        calculatedExpenses += staff.baseSalary / totalChannels;
+      }
+    });
+
+    // Thưởng KPI 5% doanh thu nếu doanh thu kênh > 0
+    const bonus = recordFormData.revenue > 0 ? recordFormData.revenue * 0.05 : 0;
+    calculatedExpenses += bonus;
+
+    const roundedExpenses = Math.round(calculatedExpenses);
+
+    // Cập nhật recordFormData
+    setRecordFormData(prev => ({
+      ...prev,
+      expenses: roundedExpenses,
+      netProfit: prev.revenue - roundedExpenses
+    }));
+
+    if (managers.length === 0) {
+      showToast(`Không có nhân sự nào quản lý kênh này. Chi phí tính toán là 0 VNĐ (Thưởng KPI: ${Math.round(bonus).toLocaleString('vi-VN')} VNĐ).`, 'warning');
+    } else {
+      showToast(
+        `Đã tự động tính lương phân bổ: ${roundedExpenses.toLocaleString('vi-VN')} VNĐ (Bao gồm lương phân bổ của ${managers.length} nhân sự và thưởng KPI 5% doanh thu: ${Math.round(bonus).toLocaleString('vi-VN')} VNĐ).`,
+        'success'
+      );
+    }
   };
 
   const handleAIFinancialAdvice = async () => {

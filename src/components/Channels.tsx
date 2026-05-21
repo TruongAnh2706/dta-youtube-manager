@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../contexts/AuthContext';
+import { getSafeTopicColor } from '../lib/color';
 interface ChannelsProps {
   channels: Channel[];
   setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
@@ -608,7 +609,21 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                     id: newTopicId,
                     name: tName,
                     description: 'Tạo tự động từ file Excel',
-                    color: '#' + Math.floor(Math.random()*16777215).toString(16),
+                     color: (() => {
+                       const dtaColors = [
+                         '#008080', '#0066cc', '#0088cc', '#cc0000', '#9900cc', 
+                         '#cc0066', '#e65c00', '#008000', '#b38600', '#595959', 
+                         '#003366', '#660066', '#808000', '#0059b3', '#993366',
+                         '#4d0099', '#3b7a57', '#9f1d35', '#2e5894', '#662200'
+                       ];
+                       if (Math.random() < 0.7) {
+                         return dtaColors[Math.floor(Math.random() * dtaColors.length)];
+                       }
+                       const r = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+                       const g = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+                       const b = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+                       return `#${r}${g}${b}`;
+                     })(),
                     tags: [], hashtags: [], country: 'Vietnam',
                     niche: 'Khác'
                  }]);
@@ -785,7 +800,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     setStaffList(newStaffList);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Check for duplicates
@@ -820,39 +835,71 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     if (newSourceChannelUrl && setSourceChannels) {
       const isDupSource = sourceChannels.some(sc => sc.url.toLowerCase() === newSourceChannelUrl.toLowerCase());
       if (!isDupSource) {
+        showToast('Đang lấy thông tin kênh nguồn từ YouTube...', 'info');
         const newSourceId = crypto.randomUUID();
+        let fetchedInfo: any = {};
+        try {
+          // Cào thông tin thực tế từ YouTube API V3
+          fetchedInfo = await fetchYoutubeChannelInfo(newSourceChannelUrl, youtubeApiKey, true);
+        } catch (apiErr: any) {
+          showToast(`Không lấy được dữ liệu YouTube: ${apiErr.message}. Sử dụng thông tin tạm thời.`, 'warning');
+        }
+
+        const firstTopicId = formData.topicIds?.[0];
+        const country = topics.find(t => t.id === firstTopicId)?.country || 'Vietnam';
+
         const newSource: SourceChannel = {
           id: newSourceId,
-          name: 'Nguồn Mới (Đang cập nhật)',
+          name: fetchedInfo.name || 'Nguồn Mới (DTA Auto)',
           url: newSourceChannelUrl,
+          avatarUrl: fetchedInfo.avatarUrl || undefined,
+          subscribers: fetchedInfo.subscribers || 0,
+          totalViews: fetchedInfo.totalViews || 0,
+          videoCount: fetchedInfo.videoCount || 0,
+          country: country,
           topicIds: formData.topicIds || [],
           rating: 3,
           uploadFrequency: 'Medium',
           averageViews: 0,
-          notes: 'Thêm tự động từ tạo kênh',
-          allowedStaffIds: finalStaffIds
+          notes: 'Thêm tự động từ tạo kênh DTA',
+          allowedStaffIds: finalStaffIds,
+          isMonetized: fetchedInfo.isMonetized ?? null
         };
-        setSourceChannels(prev => [...prev, newSource]);
-        finalLinkedSourceIds.push(newSourceId);
-        supabase.from('source_channels').insert([{
+
+        // Lưu vào DB đồng bộ
+        const { error: insertErr } = await supabase.from('source_channels').insert([{
            id: newSourceId,
            name: newSource.name,
            url: newSource.url,
+           avatar_url: newSource.avatarUrl,
+           subscribers: newSource.subscribers,
+           views: newSource.totalViews,
+           video_count: newSource.videoCount,
+           country: newSource.country,
            topic_ids: newSource.topicIds,
            rating: newSource.rating,
            upload_frequency: newSource.uploadFrequency,
            average_views: newSource.averageViews,
            notes: newSource.notes,
            allowed_staff_ids: newSource.allowedStaffIds,
-           status: 'active'
-        }]).then();
+           status: 'active',
+           is_monetized: newSource.isMonetized
+        }]);
+
+        if (insertErr) {
+          showToast(`Lỗi lưu kênh nguồn vào DB: ${insertErr.message}`, 'error');
+        } else {
+          setSourceChannels(prev => [...prev, newSource]);
+          finalLinkedSourceIds.push(newSourceId);
+          showToast(`Đã thêm và liên kết kênh nguồn "${newSource.name}" thành công!`, 'success');
+        }
       }
     }
 
     if (editingChannel) {
       setChannels(prev => prev.map(c => c.id === editingChannel.id ? { ...c, ...formData, linkedSourceChannelIds: finalLinkedSourceIds } : c));
       updateStaffChannelAssignment(editingChannel.id, finalStaffIds);
-      supabase.from('channels').update({
+      const { error: updateErr } = await supabase.from('channels').update({
         channel_code: finalChannelCode,
         name: formData.name,
         url: formData.url,
@@ -869,12 +916,17 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         proxy_id: formData.proxyId,
         posting_schedules: formData.postingSchedules,
         linked_source_channel_ids: finalLinkedSourceIds
-      }).eq('id', editingChannel.id).then();
-      showToast('Đã cập nhật thông tin kênh thành công!', 'success');
+      }).eq('id', editingChannel.id);
+      
+      if (updateErr) {
+        showToast(`Lỗi cập nhật kênh chính: ${updateErr.message}`, 'error');
+      } else {
+        showToast('Đã cập nhật thông tin kênh thành công!', 'success');
+      }
     } else {
       setChannels(prev => [...prev, { id: channelIdToUse, ...formData, linkedSourceChannelIds: finalLinkedSourceIds }]);
       updateStaffChannelAssignment(channelIdToUse, finalStaffIds);
-      supabase.from('channels').insert([{
+      const { error: insertErr } = await supabase.from('channels').insert([{
         id: channelIdToUse,
         channel_code: finalChannelCode,
         name: formData.name,
@@ -892,18 +944,23 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         proxy_id: formData.proxyId,
         posting_schedules: formData.postingSchedules,
         linked_source_channel_ids: finalLinkedSourceIds
-      }]).then();
-      showToast('Đã thêm kênh mới thành công!', 'success');
+      }]);
+
+      if (insertErr) {
+        showToast(`Lỗi thêm kênh chính mới: ${insertErr.message}`, 'error');
+      } else {
+        showToast('Đã thêm kênh mới thành công!', 'success');
+      }
     }
 
     if (formData.email && setManagedEmails) {
       const matchedEmail = managedEmails.find(em => em.email.toLowerCase() === formData.email?.toLowerCase());
       if (matchedEmail) {
          if (formData.status === 'dead') {
-             supabase.from('managed_emails').update({ status: 'new', channel_code: '' }).eq('id', matchedEmail.id).then();
+             await supabase.from('managed_emails').update({ status: 'new', channel_code: '' }).eq('id', matchedEmail.id);
              setManagedEmails(prev => prev.map(em => em.id === matchedEmail.id ? { ...em, status: 'new', channelCode: '' } : em));
          } else {
-             supabase.from('managed_emails').update({ status: 'Kênh đã tạo', channel_code: finalChannelCode }).eq('id', matchedEmail.id).then();
+             await supabase.from('managed_emails').update({ status: 'Kênh đã tạo', channel_code: finalChannelCode }).eq('id', matchedEmail.id);
              setManagedEmails(prev => prev.map(em => em.id === matchedEmail.id ? { ...em, status: 'Kênh đã tạo', channelCode: finalChannelCode } : em));
          }
       }
@@ -1242,7 +1299,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                                   const topic = topics.find(t => t.id === tid);
                                   if (!topic) return null;
                                   return (
-                                    <span key={tid} className="text-[8px] px-1 py-0.5 rounded-full text-white whitespace-nowrap" style={{ backgroundColor: topic.color }}>
+                                    <span key={tid} className="text-[8px] px-1 py-0.5 rounded-full text-white whitespace-nowrap" style={{ backgroundColor: getSafeTopicColor(topic.color) }}>
                                       {topic.name}
                                     </span>
                                   );
@@ -1302,7 +1359,32 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                       )}
                     </td>
                     <td className="p-4 text-sm text-gray-600">
-                      {proxy ? <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{proxy.ip}</span> : <span className="text-gray-400 italic">Không dùng proxy</span>}
+                      {proxy ? (
+                        <div className="flex flex-col space-y-1">
+                          <div className="flex items-center space-x-1.5">
+                            <span 
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                proxy.status === 'active' 
+                                  ? 'bg-[#00FFFF] shadow-[0_0_8px_#00FFFF]' 
+                                  : proxy.status === 'dead' 
+                                    ? 'bg-[#FF0000] shadow-[0_0_8px_#FF0000] animate-pulse' 
+                                    : 'bg-gray-400'
+                              }`} 
+                              title={proxy.status === 'active' ? 'Proxy Hoạt động (Live)' : proxy.status === 'dead' ? 'Proxy Bị Die (DEAD!)' : 'Proxy Chưa Kích Hoạt'}
+                            />
+                            <span className="font-mono text-xs text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                              {proxy.ip}:{proxy.port}
+                            </span>
+                          </div>
+                          {proxy.notes && (
+                            <span className="text-[10px] text-gray-400 truncate max-w-[150px]" title={proxy.notes}>
+                              {proxy.notes}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 italic text-xs">Không dùng proxy</span>
+                      )}
                     </td>
                     <td className="p-4">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${channel.status === 'active' ? 'bg-green-100 text-green-800' : channel.status === 'suspended' ? 'bg-orange-100 text-orange-800' : channel.status === 'dead' ? 'bg-red-100 text-red-800 border border-red-200 shadow-sm' : 'bg-gray-100 text-gray-800'
@@ -1385,7 +1467,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                 {topics.map(topic => (
                   <button key={topic.id} onClick={() => {
                     setBulkActionTopicIds(prev => prev.includes(topic.id) ? prev.filter(id => id !== topic.id) : [...prev, topic.id]);
-                  }} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${bulkActionTopicIds.includes(topic.id) ? 'border-transparent text-white shadow-sm scale-105' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`} style={bulkActionTopicIds.includes(topic.id) ? { backgroundColor: topic.color } : {}}>
+                  }} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${bulkActionTopicIds.includes(topic.id) ? 'border-transparent text-white shadow-sm scale-105' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`} style={bulkActionTopicIds.includes(topic.id) ? { backgroundColor: getSafeTopicColor(topic.color) } : {}}>
                     {topic.name}
                   </button>
                 ))}
@@ -1892,7 +1974,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                     {topics
                       .filter(topic => topic.name.toLowerCase().includes(topicSearchTerm.toLowerCase()))
                       .map(topic => (
-                      <button key={topic.id} type="button" onClick={() => toggleTopic(topic.id)} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${formData.topicIds.includes(topic.id) ? 'border-transparent text-white' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`} style={formData.topicIds.includes(topic.id) ? { backgroundColor: topic.color } : {}}>
+                      <button key={topic.id} type="button" onClick={() => toggleTopic(topic.id)} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${formData.topicIds.includes(topic.id) ? 'border-transparent text-white' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`} style={formData.topicIds.includes(topic.id) ? { backgroundColor: getSafeTopicColor(topic.color) } : {}}>
                         {topic.name}
                       </button>
                     ))}

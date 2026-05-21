@@ -101,7 +101,6 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
                     }
                     
                     const itemsToUpsert: any[] = [];
-                    const itemsToDelete: string[] = [];
                     
                     formattedCurrent.forEach((item: any) => {
                         const prevItem = prevMap.get(item.id);
@@ -109,15 +108,6 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
                             itemsToUpsert.push(item);
                         }
                     });
-                    
-                    if (prevData && Array.isArray(prevData)) {
-                         const formattedPrev = toSnakeCase(prevData);
-                         formattedPrev.forEach((item: any) => {
-                             if (!currentMap.has(item.id)) {
-                                 itemsToDelete.push(item.id);
-                             }
-                         });
-                    }
 
                     if (itemsToUpsert.length > 0) {
                         const { error } = await supabase.from(table).upsert(itemsToUpsert, { onConflict: 'id' });
@@ -130,16 +120,6 @@ export function AutoSaveService({ dataToSync, onRemoteUpdate }: AutoSaveServiceP
                             console.error(`❌ Lỗi Supabase Sync ${table}:`, error);
                         } else {
                             console.log(`✅ [AutoSave] Đã cập nhật ${itemsToUpsert.length} records lên ${table}`);
-                        }
-                    }
-
-                    if (itemsToDelete.length > 0) {
-                        const { error } = await supabase.from(table).delete().in('id', itemsToDelete);
-                        if (error) {
-                            showToast(`Lỗi AutoSave Delete [${table}]: ${error.message}`, 'error');
-                            console.error(`❌ Lỗi Supabase Delete ${table}:`, error);
-                        } else {
-                            console.log(`🗑️ [AutoSave] Đã xóa ${itemsToDelete.length} records ở ${table}`);
                         }
                     }
                 } catch (err) {

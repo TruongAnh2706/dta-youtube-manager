@@ -76,8 +76,11 @@ app.use(cors({
 app.use(express.json());
 
 // ========================================
-// MIDDLEWARE: Xác thực JWT cho các endpoint nhạy cảm
+// MIDDLEWARE: Xác thực JWT cho các endpoint nhạy cảm (Đã được DTA Studio tối ưu hóa bằng in-memory cache)
 // ========================================
+const tokenCache = new Map(); // token -> { user, expiresAt }
+const TOKEN_CACHE_DURATION = 30 * 60 * 1000; // Cache 30 phút để tăng tốc độ & tránh timeout mạng
+
 async function verifyAuth(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -85,15 +88,42 @@ async function verifyAuth(req, res, next) {
     }
 
     const token = authHeader.split(' ')[1];
+    
+    // 1. Kiểm tra cache trước để tăng tốc độ phản hồi & tránh bị Supabase chặn/timeout do mạng
+    const cached = tokenCache.get(token);
+    if (cached && cached.expiresAt > Date.now()) {
+        req.authUser = cached.user;
+        return next();
+    }
+
     try {
+        // 2. Nếu không có cache hoặc hết hạn, gọi API Supabase xác thực
         const { data: { user }, error } = await supabase.auth.getUser(token);
         if (error || !user) {
+            tokenCache.delete(token); // Xóa cache cũ nếu có lỗi
             return res.status(401).json({ error: 'Token không hợp lệ hoặc đã hết hạn.' });
         }
+        
+        // Lưu vào cache
+        tokenCache.set(token, {
+            user: user,
+            expiresAt: Date.now() + TOKEN_CACHE_DURATION
+        });
+        
         req.authUser = user;
         next();
     } catch (err) {
-        return res.status(401).json({ error: 'Lỗi xác thực token.' });
+        console.error('[AUTH VERIFY ERROR] Lỗi kết nối Supabase Auth, kiểm tra cache châm chước:', err.message);
+        
+        // Nếu bị lỗi kết nối mạng (Timeout) nhưng trước đó đã đăng nhập và cache mới hết hạn chưa lâu,
+        // cho phép sử dụng lại cache châm chước để không làm gián đoạn trải nghiệm người dùng.
+        if (cached && (Date.now() - cached.expiresAt) < 60 * 60 * 1000) { // Châm chước thêm tối đa 60 phút
+            console.log('[AUTH VERIFY] Kích hoạt chế độ xác thực ngoại tuyến châm chước thành công.');
+            req.authUser = cached.user;
+            return next();
+        }
+        
+        return res.status(401).json({ error: 'Lỗi kết nối mạng xác thực token tới Supabase. Vui lòng thử lại.' });
     }
 }
 
@@ -482,6 +512,128 @@ app.post('/api/youtube/channel-info', verifyAuth, async (req, res) => {
     } catch (err) {
         console.error('[YT] Channel info error:', err);
         res.status(500).json({ error: err.message || 'Lỗi khi lấy thông tin kênh.' });
+    }
+});
+
+/**
+ * POST /api/youtube/check-monetization
+ * Body: { channelUrl, videoId, videoUrl }
+ * Kiểm tra trạng thái kiếm tiền bằng cách cào HTML của một video thuộc kênh
+ */
+app.post('/api/youtube/check-monetization', verifyAuth, async (req, res) => {
+    const { channelUrl, videoId, videoUrl } = req.body;
+
+    if (!channelUrl && !videoId && !videoUrl) {
+        return res.status(400).json({ error: 'Thiếu thông tin đầu vào. Cần truyền URL kênh, video ID hoặc URL video.' });
+    }
+
+    try {
+        let targetVideoId = videoId;
+
+        // 1. Nếu có videoUrl, trích xuất videoId
+        if (!targetVideoId && videoUrl) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = videoUrl.match(regExp);
+            if (match && match[2].length === 11) {
+                targetVideoId = match[2];
+            }
+        }
+
+        // 2. Nếu vẫn không có videoId nhưng có channelUrl, cào trang kênh để tìm videoId mới nhất
+        if (!targetVideoId && channelUrl) {
+            console.log(`[MONETIZATION] Cào video mới nhất từ kênh: ${channelUrl}`);
+            const channelResponse = await fetch(channelUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Cache-Control': 'no-cache'
+                }
+            });
+
+            if (!channelResponse.ok) {
+                return res.status(channelResponse.status).json({ error: `Không thể truy cập đường dẫn kênh (HTTP ${channelResponse.status}).` });
+            }
+
+            const channelHtml = await channelResponse.text();
+            
+            // Phát hiện bot detection của YouTube
+            if (channelHtml.includes('sorry/index') || channelHtml.includes('consent.youtube.com')) {
+                return res.status(429).json({ error: 'Yêu cầu cào video mới nhất bị YouTube chặn (Rate Limit). Vui lòng quét thủ công hoặc cập nhật dữ liệu kênh trước.' });
+            }
+
+            // Tìm videoId bằng Regex
+            const videoIdMatch = channelHtml.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+            if (videoIdMatch) {
+                targetVideoId = videoIdMatch[1];
+                console.log(`[MONETIZATION] Tìm thấy videoId từ kênh: ${targetVideoId}`);
+            } else {
+                // Thử tìm bằng regex watch?v=
+                const watchMatch = channelHtml.match(/\/watch\?v=([a-zA-Z0-9_-]{11})/);
+                if (watchMatch) {
+                    targetVideoId = watchMatch[1];
+                    console.log(`[MONETIZATION] Tìm thấy videoId dạng watch từ kênh: ${targetVideoId}`);
+                }
+            }
+        }
+
+        if (!targetVideoId) {
+            return res.status(400).json({ error: 'Không tìm thấy video nào công khai trên kênh đối thủ để kiểm tra. Vui lòng cập nhật thông tin kênh trước.' });
+        }
+
+        console.log(`[MONETIZATION] Đang kiểm tra trạng thái kiếm tiền của video ID: ${targetVideoId}`);
+        const videoResponse = await fetch(`https://www.youtube.com/watch?v=${targetVideoId}`, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                'Cache-Control': 'no-cache'
+            }
+        });
+
+        if (!videoResponse.ok) {
+            return res.status(videoResponse.status).json({ error: `Không thể kết nối đến video YouTube (HTTP ${videoResponse.status}).` });
+        }
+
+        const videoHtml = await videoResponse.text();
+
+        // Kiểm tra bot detection
+        if (videoHtml.includes('sorry/index') || videoHtml.includes('consent.youtube.com')) {
+            return res.status(429).json({ error: 'Yêu cầu phân tích video bị YouTube chặn (Rate Limit). Vui lòng thử lại sau vài phút.' });
+        }
+
+        // Thực hiện quét flag kiếm tiền
+        const isMonetized = videoHtml.includes('"is_monetization_enabled":true') || 
+                            videoHtml.includes('"key":"is_monetization_enabled","value":"true"') ||
+                            videoHtml.includes('is_monetization_enabled=true');
+                            
+        const isNotMonetized = videoHtml.includes('"is_monetization_enabled":false') || 
+                               videoHtml.includes('"key":"is_monetization_enabled","value":"false"') ||
+                               videoHtml.includes('is_monetization_enabled=false');
+
+        console.log(`[MONETIZATION] Kết quả check cho ${targetVideoId}: matches_true=${isMonetized}, matches_false=${isNotMonetized}`);
+
+        if (isMonetized) {
+            return res.json({ success: true, isMonetized: true, videoId: targetVideoId });
+        } else if (isNotMonetized) {
+            return res.json({ success: true, isMonetized: false, videoId: targetVideoId });
+        } else {
+            // Trường hợp không tìm thấy flag nào trong HTML (có thể là video shorts hoặc video đặc biệt không chứa tag này, hoặc YouTube thay đổi cấu trúc cấu hình)
+            // Hãy thử tìm kiếm flag phụ: "yt_ad_signals" hoặc quảng cáo nhúng
+            const hasAdSignals = videoHtml.includes('yt_ad_signals') || videoHtml.includes('adPlacements');
+            if (hasAdSignals) {
+                console.log(`[MONETIZATION] Phát hiện ad signals phụ, tự động coi là BKT.`);
+                return res.json({ success: true, isMonetized: true, videoId: targetVideoId });
+            }
+            
+            return res.status(404).json({ 
+                error: 'Không tìm thấy thông tin kiếm tiền từ video này. Video có thể đã bị hạn chế độ tuổi hoặc tắt quảng cáo.',
+                isMonetized: null,
+                videoId: targetVideoId
+            });
+        }
+
+    } catch (err) {
+        console.error('[MONETIZATION] Lỗi khi kiểm tra kiếm tiền:', err);
+        res.status(500).json({ error: 'Lỗi hệ thống khi cào dữ liệu từ YouTube: ' + err.message });
     }
 });
 

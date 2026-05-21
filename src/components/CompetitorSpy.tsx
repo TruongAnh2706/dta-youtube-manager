@@ -6,6 +6,7 @@ import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
+import { getSafeTopicColor } from '../lib/color';
 
 interface CompetitorSpyProps {
   competitors: Competitor[];
@@ -239,7 +240,7 @@ export function CompetitorSpy({ competitors, setCompetitors, youtubeApiKey, gemi
                       const topic = topics.find(t => t.id === tid);
                       if (!topic) return null;
                       return (
-                        <span key={tid} className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white shadow-sm" style={{ backgroundColor: topic.color }}>
+                        <span key={tid} className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white shadow-sm" style={{ backgroundColor: getSafeTopicColor(topic.color) }}>
                           {topic.name}
                         </span>
                       );
@@ -382,7 +383,7 @@ export function CompetitorSpy({ competitors, setCompetitors, youtubeApiKey, gemi
                           ? 'text-white shadow-sm'
                           : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                         }`}
-                      style={{ backgroundColor: formData.topicIds.includes(topic.id) ? topic.color : undefined }}
+                      style={{ backgroundColor: formData.topicIds.includes(topic.id) ? getSafeTopicColor(topic.color) : undefined }}
                     >
                       {topic.name}
                     </button>

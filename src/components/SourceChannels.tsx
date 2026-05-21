@@ -9,6 +9,7 @@ import { analyzeChannelTopic } from '../services/aiService';
 import { Copy, Check, Link2 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
+import { getSafeTopicColor } from '../lib/color';
 
 interface SourceChannelsProps {
   sourceChannels: SourceChannel[];
@@ -34,6 +35,80 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
   const [fetchError, setFetchError] = useState('');
   const [expandedDesc, setExpandedDesc] = useState<Record<string, boolean>>({});
   const [viewingChannel, setViewingChannel] = useState<SourceChannel | null>(null);
+  const [checkingMonetizationIds, setCheckingMonetizationIds] = useState<string[]>([]);
+
+  const handleCheckMonetization = async (channel: SourceChannel) => {
+    if (checkingMonetizationIds.includes(channel.id)) return;
+
+    setCheckingMonetizationIds(prev => [...prev, channel.id]);
+    showToast(`Đang quét trạng thái kiếm tiền của kênh đối thủ: ${channel.name}...`, 'info');
+
+    try {
+      // 1. Lấy token JWT từ Supabase session
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      
+      if (!token) {
+        showToast('Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại.', 'error');
+        return;
+      }
+
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      
+      // Lấy videoId mới nhất từ channel nếu có
+      const videoId = channel.latestVideos?.[0]?.id || null;
+
+      // 2. Gọi API Backend check monetization
+      const response = await fetch(`${API_BASE_URL}/api/youtube/check-monetization`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          channelUrl: channel.url,
+          videoId: videoId
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Cào dữ liệu kiếm tiền từ YouTube thất bại.');
+      }
+
+      const isMonetized = result.isMonetized;
+
+      // 3. Cập nhật vào cơ sở dữ liệu Supabase (Cột is_monetized)
+      const { error: dbError } = await supabase
+        .from('source_channels')
+        .update({ is_monetized: isMonetized })
+        .eq('id', channel.id);
+
+      if (dbError) {
+        throw new Error(`Lỗi cập nhật CSDL: ${dbError.message}`);
+      }
+
+      // 4. Đồng bộ React State
+      setSourceChannels(prev => prev.map(c => c.id === channel.id ? { ...c, isMonetized } : c));
+
+      // 5. Hiển thị thông báo tiếng Việt theo kết quả
+      if (isMonetized === true) {
+        showToast(`Đã xác minh: Kênh đối thủ "${channel.name}" đang BẬT kiếm tiền! 🎉`, 'success');
+      } else if (isMonetized === false) {
+        showToast(`Cảnh báo: Kênh đối thủ "${channel.name}" đã bị TẮT kiếm tiền! 🛑`, 'warning');
+      } else {
+        showToast(`Không xác định được trạng thái kiếm tiền của kênh "${channel.name}".`, 'info');
+      }
+
+    } catch (err: any) {
+      console.error('[CHECK MONETIZATION ERROR]', err);
+      showToast(err.message || 'Lỗi hệ thống khi kiểm tra trạng thái kiếm tiền.', 'error');
+    } finally {
+      setCheckingMonetizationIds(prev => prev.filter(id => id !== channel.id));
+    }
+  };
+
   const formatDuration = (duration: string) => {
     if (!duration) return '';
     const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
@@ -715,7 +790,21 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                     id: newTopicId,
                     name: tName,
                     description: 'Tạo tự động từ file Excel (Kênh Nguồn)',
-                    color: '#' + Math.floor(Math.random()*16777215).toString(16),
+                     color: (() => {
+                       const dtaColors = [
+                         '#008080', '#0066cc', '#0088cc', '#cc0000', '#9900cc', 
+                         '#cc0066', '#e65c00', '#008000', '#b38600', '#595959', 
+                         '#003366', '#660066', '#808000', '#0059b3', '#993366',
+                         '#4d0099', '#3b7a57', '#9f1d35', '#2e5894', '#662200'
+                       ];
+                       if (Math.random() < 0.7) {
+                         return dtaColors[Math.floor(Math.random() * dtaColors.length)];
+                       }
+                       const r = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+                       const g = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+                       const b = Math.floor(Math.random() * 140).toString(16).padStart(2, '0');
+                       return `#${r}${g}${b}`;
+                     })(),
                     tags: [], hashtags: [], country: country,
                     niche: 'Khác'
                  };
@@ -1058,9 +1147,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
       });
     }
 
-    const isPublic = !channel.allowedStaffIds || channel.allowedStaffIds.length === 0;
-    const isLeaderOrAbove = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'leader';
-    const isAllowed = isLeaderOrAbove || (!isPublic && currentUser && channel.allowedStaffIds?.includes(currentUser.id));
+    const isAllowed = true; // Kênh nguồn nhận từ props vốn đã được lọc phân quyền bảo mật ở App.tsx
     const matchesStatus = filterStatus === 'all' || (filterStatus === 'dead' ? channel.status === 'dead' : channel.status !== 'dead');
 
     return matchesSearch && matchesCountry && matchesTopic && matchesNiche && isAllowed && matchesStatus;
@@ -1075,19 +1162,14 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
   const totalPages = Math.ceil(filteredChannels.length / itemsPerPage);
   const paginatedChannels = filteredChannels.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  // Calculate viewable topics / channels for privacy
-  const viewableSourceChannels = sourceChannels.filter(channel => {
-    const isPublic = !channel.allowedStaffIds || channel.allowedStaffIds.length === 0;
-    const isLeaderOrAbove = currentUser?.role === 'admin' || currentUser?.role === 'manager' || currentUser?.role === 'leader';
-    return isLeaderOrAbove || (!isPublic && currentUser && channel.allowedStaffIds?.includes(currentUser.id));
-  });
-  
+  // Sử dụng trực tiếp sourceChannels đã được lọc phân quyền từ App.tsx
+  const viewableSourceChannels = sourceChannels;
   const availableTopicIds = new Set(viewableSourceChannels.flatMap(c => c.topicIds || []));
   const viewableTopics = topics.filter(t => 
     currentUser?.role === 'admin' || currentUser?.role === 'manager' || availableTopicIds.has(t.id)
   );
 
-  // Tính toán Mini-Dashboard Radar
+  // Tính toán Mini-Dashboard Radar sử dụng sourceChannels prop trực tiếp
   const totalSubscribers = viewableSourceChannels.reduce((sum, c) => sum + (c.subscribers || 0), 0);
   const totalViewsRadar = viewableSourceChannels.reduce((sum, c) => sum + (c.totalViews || 0), 0);
   const viralAlertsCount = viewableSourceChannels.filter(c => c.isViral).length;
@@ -1324,6 +1406,59 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                 </td>
                 <td className="p-4">
                   <div className="flex items-center space-x-3">
+                    {/* Đèn trạng thái BKT Neon nhấp nháy */}
+                    <div className="shrink-0 flex items-center justify-center w-4">
+                      {(() => {
+                        const isChecking = checkingMonetizationIds.includes(channel.id);
+                        
+                        if (isChecking) {
+                          return (
+                            <button
+                              disabled
+                              className="w-3 h-3 rounded-full bg-cyan-400 animate-spin border border-cyan-200 cursor-not-allowed"
+                              title="Đang kiểm tra kiếm tiền..."
+                            />
+                          );
+                        }
+
+                        if (channel.isMonetized === true) {
+                          return (
+                            <button
+                              onClick={() => handleCheckMonetization(channel)}
+                              className="relative flex h-3 w-3 cursor-pointer focus:outline-none"
+                              title="Đang Bật kiếm tiền (BKT). Bấm để kiểm tra lại."
+                            >
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 shadow-[0_0_8px_#10b981]"></span>
+                            </button>
+                          );
+                        }
+
+                        if (channel.isMonetized === false) {
+                          return (
+                            <button
+                              onClick={() => handleCheckMonetization(channel)}
+                              className="relative flex h-3 w-3 cursor-pointer focus:outline-none"
+                              title="Bị Tắt kiếm tiền. Bấm để kiểm tra lại."
+                            >
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500 shadow-[0_0_8px_#ef4444]"></span>
+                            </button>
+                          );
+                        }
+
+                        return (
+                          <button
+                            onClick={() => handleCheckMonetization(channel)}
+                            className="relative flex h-3 w-3 cursor-pointer focus:outline-none hover:opacity-80 transition-opacity"
+                            title="Chưa kiểm tra kiếm tiền. Bấm để quét ngay."
+                          >
+                            <span className="relative inline-flex rounded-full h-3 w-3 bg-gray-400 border border-gray-500"></span>
+                          </button>
+                        );
+                      })()}
+                    </div>
+
                     <div className="relative shrink-0">
                       {channel.avatarUrl ? (
                         <img src={channel.avatarUrl} alt={channel.name} className="w-10 h-10 rounded-full object-cover border border-gray-200" referrerPolicy="no-referrer" />
@@ -1384,7 +1519,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                           const topic = topics.find(t => t.id === tid);
                           if (!topic) return null;
                           return (
-                            <span key={tid} className="text-[10px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap" style={{ backgroundColor: topic.color }}>
+                            <span key={tid} className="text-[10px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap" style={{ backgroundColor: getSafeTopicColor(topic.color) }}>
                               {topic.name}
                             </span>
                           );
@@ -1583,9 +1718,32 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                 )}
                 <div className="flex-1">
                   <h1 className="text-2xl font-bold text-gray-900">{viewingChannel.name}</h1>
-                  <a href={viewingChannel.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline flex items-center mt-1 mb-4">
-                    {viewingChannel.url} <ExternalLink size={14} className="ml-1" />
-                  </a>
+                  <div className="flex items-center space-x-2 mt-1 mb-4 flex-wrap gap-y-2">
+                    <a href={viewingChannel.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline flex items-center">
+                      {viewingChannel.url} <ExternalLink size={14} className="ml-1" />
+                    </a>
+                    <span className="text-gray-300">|</span>
+                    
+                    {/* Badge trạng thái BKT của Kênh Nguồn */}
+                    {viewingChannel.isMonetized === true && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-[0_0_6px_rgba(16,185,129,0.2)]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
+                        Đang bật kiếm tiền
+                      </span>
+                    )}
+                    {viewingChannel.isMonetized === false && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-300 shadow-[0_0_6px_rgba(239,68,68,0.2)]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 mr-1.5 animate-pulse"></span>
+                        Bị tắt kiếm tiền
+                      </span>
+                    )}
+                    {(viewingChannel.isMonetized === null || viewingChannel.isMonetized === undefined) && (
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-800 border border-gray-300">
+                        <span className="w-1.5 h-1.5 rounded-full bg-gray-400 mr-1.5"></span>
+                        Chưa kiểm tra kiếm tiền
+                      </span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                       <div className="text-xs text-gray-500 mb-1 flex items-center"><Star size={12} className="mr-1" /> Subscribers</div>
@@ -1612,7 +1770,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                         const topic = topics.find(t => t.id === tid);
                         if (!topic) return null;
                         return (
-                          <span key={tid} className="text-xs px-3 py-1 rounded-full text-white font-medium" style={{ backgroundColor: topic.color }}>
+                          <span key={tid} className="text-xs px-3 py-1 rounded-full text-white font-medium" style={{ backgroundColor: getSafeTopicColor(topic.color) }}>
                             {topic.name}
                           </span>
                         );
@@ -1708,7 +1866,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                 {topics.map(topic => (
                   <button key={topic.id} onClick={() => {
                     setBulkActionTopicIds(prev => prev.includes(topic.id) ? prev.filter(id => id !== topic.id) : [...prev, topic.id]);
-                  }} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${bulkActionTopicIds.includes(topic.id) ? 'border-transparent text-white shadow-sm scale-105' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`} style={bulkActionTopicIds.includes(topic.id) ? { backgroundColor: topic.color } : {}}>
+                  }} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${bulkActionTopicIds.includes(topic.id) ? 'border-transparent text-white shadow-sm scale-105' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'}`} style={bulkActionTopicIds.includes(topic.id) ? { backgroundColor: getSafeTopicColor(topic.color) } : {}}>
                     {topic.name}
                   </button>
                 ))}
@@ -1846,7 +2004,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
                         key={topic.id} type="button" onClick={() => toggleTopic(topic.id)}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${formData.topicIds.includes(topic.id) ? 'border-transparent text-white' : 'border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
                           }`}
-                        style={formData.topicIds.includes(topic.id) ? { backgroundColor: topic.color } : {}}
+                        style={formData.topicIds.includes(topic.id) ? { backgroundColor: getSafeTopicColor(topic.color) } : {}}
                       >
                         {topic.name}
                       </button>

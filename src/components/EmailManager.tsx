@@ -10,6 +10,7 @@ import { ManagedEmail, Staff, Topic, VideoTask, Channel } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import { supabase } from '../lib/supabase';
+import { generateTOTP, isValid2FASecret } from '../services/totp';
 
 interface EmailManagerProps {
   emails: ManagedEmail[];
@@ -24,7 +25,138 @@ interface EmailManagerProps {
   privacyMode?: boolean;
 }
 
+// DTA Studio OTP Viewers
+export function DtaOtpViewer({ secret, privacyMode = false }: { secret: string; privacyMode?: boolean }) {
+  const [otp, setOtp] = React.useState<string>('');
+  const [secondsLeft, setSecondsLeft] = React.useState<number>(0);
+  const [isValid, setIsValid] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (!secret) return;
+    const valid = isValid2FASecret(secret);
+    setIsValid(valid);
+    if (!valid) return;
+
+    let active = true;
+    const updateOtp = async () => {
+      const res = await generateTOTP(secret);
+      if (active) {
+        setOtp(res.otp);
+        setSecondsLeft(res.secondsLeft);
+      }
+    };
+
+    updateOtp();
+    const interval = setInterval(updateOtp, 1000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [secret]);
+
+  if (!isValid) return null;
+
+  if (privacyMode) {
+    return (
+      <div className="mt-3 bg-purple-50/50 p-3 rounded-xl border border-purple-100/50 text-center text-xs text-purple-600 font-medium">
+        [🔒 2FA OTP đang bị ẩn ở chế độ riêng tư]
+      </div>
+    );
+  }
+
+  const formattedOtp = otp ? `${otp.slice(0, 3)} ${otp.slice(3)}` : '------';
+
+  return (
+    <div className="mt-3 bg-gradient-to-r from-purple-50 to-indigo-50/50 p-3 rounded-xl border border-purple-100/80 flex items-center justify-between shadow-sm">
+      <div className="flex flex-col">
+        <span className="text-[10px] font-bold text-purple-600 uppercase tracking-wider">Mã OTP (Đức Trường AI)</span>
+        <span className="font-mono text-purple-900 text-lg font-bold tracking-widest">{formattedOtp}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${secondsLeft < 8 ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-purple-100 text-purple-600'}`}>
+          {secondsLeft}s
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            if (otp) {
+              navigator.clipboard.writeText(otp);
+            }
+          }}
+          disabled={!otp}
+          className="bg-purple-600 hover:bg-purple-700 text-white p-1.5 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center"
+          title="Sao chép OTP"
+        >
+          <Copy size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function DtaOtpMini({ secret, privacyMode = false }: { secret: string; privacyMode?: boolean }) {
+  const [otp, setOtp] = React.useState<string>('');
+  const [secondsLeft, setSecondsLeft] = React.useState<number>(0);
+  const [isValid, setIsValid] = React.useState<boolean>(false);
+
+  React.useEffect(() => {
+    if (!secret) return;
+    const valid = isValid2FASecret(secret);
+    setIsValid(valid);
+    if (!valid) return;
+
+    let active = true;
+    const updateOtp = async () => {
+      const res = await generateTOTP(secret);
+      if (active) {
+        setOtp(res.otp);
+        setSecondsLeft(res.secondsLeft);
+      }
+    };
+
+    updateOtp();
+    const interval = setInterval(updateOtp, 1000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [secret]);
+
+  if (!isValid) return <span className="text-gray-400 text-xs">-</span>;
+  if (privacyMode) return <span className="text-purple-600 font-mono text-xs">••••••</span>;
+
+  const formattedOtp = otp ? `${otp.slice(0, 3)} ${otp.slice(3)}` : '------';
+
+  return (
+    <div className="flex items-center gap-1 whitespace-nowrap">
+      <span className="font-mono text-purple-700 font-bold tracking-normal text-xs bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 whitespace-nowrap">
+        {formattedOtp}
+      </span>
+      <span className={`text-[9px] font-bold font-mono px-1 py-0.5 rounded shrink-0 ${secondsLeft < 8 ? 'bg-red-100 text-red-600 animate-pulse' : 'bg-gray-100 text-gray-600'}`}>
+        {secondsLeft}s
+      </span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (otp) {
+            navigator.clipboard.writeText(otp);
+          }
+        }}
+        disabled={!otp}
+        className="text-purple-600 hover:bg-purple-100 p-1 rounded transition-colors disabled:opacity-50 shrink-0"
+        title="Copy OTP"
+      >
+        <Copy size={11} />
+      </button>
+    </div>
+  );
+}
+
 export function EmailManager({ emails, setEmails, staffList, topics, currentUser, tasks, setTasks, systemSettings, channels = [], privacyMode = false }: EmailManagerProps) {
+
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
@@ -35,6 +167,50 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmail, setEditingEmail] = useState<ManagedEmail | null>(null);
   const [viewingEmail, setViewingEmail] = useState<ManagedEmail | null>(null);
+  const [showViewingPassword, setShowViewingPassword] = useState(false);
+  const [showViewing2FA, setShowViewing2FA] = useState(false);
+  const [showViewingRecovery, setShowViewingRecovery] = useState(false);
+  const [showViewingPhone, setShowViewingPhone] = useState(false);
+
+  const toggleViewField = (field: 'password' | '2fa' | 'recovery' | 'phone') => {
+    if (field === 'password') {
+      setShowViewingPassword(prev => {
+        if (!prev) {
+          setTimeout(() => setShowViewingPassword(false), 5000);
+        }
+        return !prev;
+      });
+    } else if (field === '2fa') {
+      setShowViewing2FA(prev => {
+        if (!prev) {
+          setTimeout(() => setShowViewing2FA(false), 5000);
+        }
+        return !prev;
+      });
+    } else if (field === 'recovery') {
+      setShowViewingRecovery(prev => {
+        if (!prev) {
+          setTimeout(() => setShowViewingRecovery(false), 5000);
+        }
+        return !prev;
+      });
+    } else if (field === 'phone') {
+      setShowViewingPhone(prev => {
+        if (!prev) {
+          setTimeout(() => setShowViewingPhone(false), 5000);
+        }
+        return !prev;
+      });
+    }
+  };
+
+  const closeViewingModal = () => {
+    setViewingEmail(null);
+    setShowViewingPassword(false);
+    setShowViewing2FA(false);
+    setShowViewingRecovery(false);
+    setShowViewingPhone(false);
+  };
   
   const [formData, setFormData] = useState<Omit<ManagedEmail, 'id' | 'createdAt'>>({
     email: '', password: '', recoveryEmail: '', twoFactorAuth: '', 
@@ -662,6 +838,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                 )}
                 <th className="p-3 font-medium w-24">Mã Kênh</th>
                 <th className="p-3 font-medium min-w-[200px]">Email</th>
+                <th className="p-3 font-medium min-w-[150px]">Mã OTP 2FA</th>
                 <th className="p-3 font-medium min-w-[220px]">Kênh liên kết</th>
                 <th className="p-3 font-medium w-36">Nhân sự</th>
                 <th className="p-3 font-medium w-36">Trạng thái</th>
@@ -706,6 +883,13 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                         <div className="text-[11px] text-gray-500 mt-1 line-clamp-1">
                           ĐH: {email.targetTopicIds.map(tid => topics.find(t => t.id === tid)?.name).filter(Boolean).join(', ')}
                         </div>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      {email.twoFactorAuth ? (
+                        <DtaOtpMini secret={email.twoFactorAuth} privacyMode={privacyMode} />
+                      ) : (
+                        <span className="text-gray-400 text-xs italic">Không có 2FA</span>
                       )}
                     </td>
                     <td className="p-3">
@@ -791,7 +975,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
               <h3 className="text-xl font-bold text-gray-900 flex items-center">
                 <Mail size={22} className="mr-3 text-blue-500" /> Chi tiết tài khoản
               </h3>
-              <button onClick={() => setViewingEmail(null)} className="text-gray-400 hover:text-red-500 transition-colors p-1 hover:bg-red-50 rounded-lg">
+              <button onClick={closeViewingModal} className="text-gray-400 hover:text-red-500 transition-colors p-1 hover:bg-red-50 rounded-lg">
                 <X size={20} />
               </button>
             </div>
@@ -815,31 +999,90 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                 <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100/50">
                   <label className="text-xs font-bold text-blue-600/70 uppercase flex justify-between items-center">
                     Mật khẩu
-                    {!privacyMode && viewingEmail.password && <button onClick={() => handleCopy(viewingEmail.password, 'Mật khẩu')} className="hover:text-blue-600"><Copy size={12} /></button>}
+                    <div className="flex items-center gap-1.5">
+                      {!privacyMode && (
+                        <button type="button" onClick={() => toggleViewField('password')} className="hover:text-blue-600 p-0.5 rounded transition-colors" title={showViewingPassword ? "Ẩn" : "Xem"}>
+                          {showViewingPassword ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      )}
+                      {viewingEmail.password && (
+                        <button type="button" onClick={() => handleCopy(viewingEmail.password || '', 'Mật khẩu')} className="hover:text-blue-600 p-0.5 rounded transition-colors" title="Sao chép">
+                          <Copy size={13} />
+                        </button>
+                      )}
+                    </div>
                   </label>
                   <div className="font-mono text-blue-800 text-sm mt-2 select-all truncate font-semibold">
-                    {privacyMode ? '••••••••' : (viewingEmail.password || '-')}
+                    {privacyMode ? '••••••••' : (showViewingPassword ? (viewingEmail.password || '-') : '••••••••')}
                   </div>
                 </div>
                 
                 <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100/50">
                   <label className="text-xs font-bold text-purple-600/70 uppercase flex justify-between items-center">
                     Mã 2FA
-                    {!privacyMode && viewingEmail.twoFactorAuth && <button onClick={() => handleCopy(viewingEmail.twoFactorAuth, 'Mã 2FA')} className="hover:text-purple-600"><Copy size={12} /></button>}
+                    <div className="flex items-center gap-1.5">
+                      {!privacyMode && (
+                        <button type="button" onClick={() => toggleViewField('2fa')} className="hover:text-purple-600 p-0.5 rounded transition-colors" title={showViewing2FA ? "Ẩn" : "Xem"}>
+                          {showViewing2FA ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      )}
+                      {viewingEmail.twoFactorAuth && (
+                        <button type="button" onClick={() => handleCopy(viewingEmail.twoFactorAuth || '', 'Mã 2FA')} className="hover:text-purple-600 p-0.5 rounded transition-colors" title="Sao chép">
+                          <Copy size={13} />
+                        </button>
+                      )}
+                    </div>
                   </label>
                   <div className="font-mono text-purple-800 text-sm mt-2 select-all truncate font-semibold">
-                    {privacyMode ? '••••••••' : (viewingEmail.twoFactorAuth || '-')}
+                    {privacyMode ? '••••••••' : (showViewing2FA ? (viewingEmail.twoFactorAuth || '-') : '••••••••')}
                   </div>
+                  {viewingEmail.twoFactorAuth && (
+                    <DtaOtpViewer secret={viewingEmail.twoFactorAuth} privacyMode={privacyMode} />
+                  )}
                 </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                <label className="text-xs font-bold text-gray-500 uppercase flex justify-between items-center">
-                  Email Khôi phục
-                  {!privacyMode && viewingEmail.recoveryEmail && <button onClick={() => handleCopy(viewingEmail.recoveryEmail, 'Email khôi phục')} className="hover:text-gray-800"><Copy size={12} /></button>}
-                </label>
-                <div className="text-gray-800 text-sm mt-2 select-all font-medium break-all">
-                  {privacyMode ? '••••••••' : (viewingEmail.recoveryEmail || '-')}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                  <label className="text-xs font-bold text-gray-500 uppercase flex justify-between items-center">
+                    Email Khôi phục
+                    <div className="flex items-center gap-1.5">
+                      {!privacyMode && (
+                        <button type="button" onClick={() => toggleViewField('recovery')} className="hover:text-gray-700 p-0.5 rounded transition-colors" title={showViewingRecovery ? "Ẩn" : "Xem"}>
+                          {showViewingRecovery ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      )}
+                      {viewingEmail.recoveryEmail && (
+                        <button type="button" onClick={() => handleCopy(viewingEmail.recoveryEmail || '', 'Email khôi phục')} className="hover:text-gray-700 p-0.5 rounded transition-colors" title="Sao chép">
+                          <Copy size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </label>
+                  <div className="text-gray-800 text-sm mt-2 select-all font-medium break-all truncate">
+                    {privacyMode ? '••••••••' : (showViewingRecovery ? (viewingEmail.recoveryEmail || '-') : '••••••••')}
+                  </div>
+                </div>
+
+                <div className="bg-teal-50/50 p-4 rounded-xl border border-teal-100/50">
+                  <label className="text-xs font-bold text-teal-600/70 uppercase flex justify-between items-center">
+                    SĐT Khôi phục
+                    <div className="flex items-center gap-1.5">
+                      {!privacyMode && (
+                        <button type="button" onClick={() => toggleViewField('phone')} className="hover:text-teal-600 p-0.5 rounded transition-colors" title={showViewingPhone ? "Ẩn" : "Xem"}>
+                          {showViewingPhone ? <EyeOff size={13} /> : <Eye size={13} />}
+                        </button>
+                      )}
+                      {viewingEmail.verificationPhone && (
+                        <button type="button" onClick={() => handleCopy(viewingEmail.verificationPhone || '', 'SĐT khôi phục')} className="hover:text-teal-600 p-0.5 rounded transition-colors" title="Sao chép">
+                          <Copy size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </label>
+                  <div className="font-mono text-teal-800 text-sm mt-2 select-all truncate font-semibold">
+                    {privacyMode ? '••••••••' : (showViewingPhone ? (viewingEmail.verificationPhone || '-') : '••••••••')}
+                  </div>
                 </div>
               </div>
 
@@ -882,7 +1125,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
             </div>
             
             <div className="p-4 border-t border-gray-100 flex justify-end bg-gray-50">
-              <button onClick={() => setViewingEmail(null)} className="px-6 py-2.5 bg-gray-800 text-white hover:bg-gray-700 rounded-lg font-medium transition-colors shadow-sm">Đóng lại</button>
+              <button onClick={closeViewingModal} className="px-6 py-2.5 bg-gray-800 text-white hover:bg-gray-700 rounded-lg font-medium transition-colors shadow-sm">Đóng lại</button>
             </div>
           </div>
         </div>

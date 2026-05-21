@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Strike, StrikeType, StrikeStatus, Channel } from '../types';
-import { Plus, Edit2, Trash2, X, ShieldAlert, AlertTriangle, CheckCircle, History, BarChart2, BrainCircuit, RefreshCw, Activity, Download } from 'lucide-react';
+import { Strike, StrikeType, StrikeStatus, Channel, SystemSettings } from '../types';
+import { Plus, Edit2, Trash2, X, ShieldAlert, AlertTriangle, CheckCircle, History, BarChart2, BrainCircuit, RefreshCw, Activity, Download, Copy, Sparkles, FileText } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
@@ -8,12 +8,15 @@ import { usePermissions } from '../hooks/usePermissions';
 import ReactMarkdown from 'react-markdown';
 import { supabase } from '../lib/supabase';
 import * as XLSX from 'xlsx';
+import { sendStrikeAlert } from '../services/telegram';
+import { sendZaloStrikeAlert } from '../services/zalo';
 
 interface CopyrightManagerProps {
   strikes: Strike[];
   setStrikes: React.Dispatch<React.SetStateAction<Strike[]>>;
   channels: Channel[];
   geminiApiKey?: string;
+  systemSettings?: SystemSettings;
 }
 
 const TYPE_LABELS: Record<StrikeType, string> = {
@@ -35,7 +38,7 @@ const STATUS_COLORS: Record<StrikeStatus, string> = {
   resolved: 'bg-green-100 text-green-800'
 };
 
-export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }: CopyrightManagerProps) {
+export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey, systemSettings }: CopyrightManagerProps) {
   const { showToast } = useToast();
   const { hasPermission } = usePermissions();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -44,6 +47,13 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
   const [isAdvising, setIsAdvising] = useState<string | null>(null);
   const [riskAssessment, setRiskAssessment] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [advisorResult, setAdvisorResult] = useState<{
+    strike: Strike;
+    channelName: string;
+    advice: string;
+    appealLetter: string;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const [formData, setFormData] = useState<Omit<Strike, 'id'>>({
     channelId: channels[0]?.id || '',
@@ -96,7 +106,16 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
     if (editingStrike) {
       setStrikes(strikes.map(s => s.id === editingStrike.id ? { ...s, ...formData } : s));
     } else {
-      setStrikes([...strikes, { id: crypto.randomUUID(), ...formData }]);
+      const newStrikeId = crypto.randomUUID();
+      const newStrike: Strike = { id: newStrikeId, ...formData };
+      setStrikes([...strikes, newStrike]);
+
+      // Gửi báo động tự động song song qua Telegram Bot & Zalo Bot
+      const channel = channels.find(c => c.id === formData.channelId);
+      if (channel) {
+        sendStrikeAlert(channel.name, formData.type, formData.details, formData.expirationDate, systemSettings);
+        sendZaloStrikeAlert(channel.name, formData.type, formData.details, formData.expirationDate, systemSettings);
+      }
     }
     setIsModalOpen(false);
   };
@@ -224,22 +243,87 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
       const model = 'gemini-2.5-flash';
 
       const channel = channels.find(c => c.id === strike.channelId);
-      const prompt = `Bạn là chuyên gia chính sách YouTube. Tôi nhận được 1 gậy ${strike.type} tại kênh ${channel?.name}. 
-      Lỗi: ${strike.errorType}. Chi tiết: ${strike.details}. 
-      Hãy tư vấn cách kháng cáo hoặc xử lý tối ưu nhất để gỡ gậy hoặc giảm thiệt hại. Trả về 2-3 câu ngắn gọn.`;
+      const prompt = `Bạn là một luật sư bản quyền YouTube chuyên nghiệp và chuyên gia chính sách pháp lý Hoa Kỳ.
+Một kênh YouTube vừa nhận được một gậy cảnh cáo.
+Tên kênh: ${channel?.name}
+Mã kênh: ${channel?.channelCode || 'N/A'}
+Loại gậy: ${strike.type === 'copyright' ? 'Bản quyền (Copyright Strike)' : 'Nguyên tắc cộng đồng (Community Guidelines Strike)'}
+Loại lỗi cụ thể: ${strike.errorType || 'Không rõ'}
+Chi tiết vi phạm: ${strike.details || 'Không có chi tiết'}
+
+Hãy phân tích kỹ tình huống này và tạo ra:
+1. "advice": Đoạn tư vấn chiến lược bằng Tiếng Việt (chuyên nghiệp, thực tế, giải thích rủi ro và các bước xử lý tiếp theo). Định dạng bằng markdown đẹp.
+2. "appealLetter": Một bức thư kháng cáo / kháng nghị bản quyền chính thức bằng TIẾNG ANH (Copyright Counter-Notification hoặc Appeal Letter) chuẩn pháp lý Hoa Kỳ (chặt chẽ, đanh thép, trích dẫn rõ Luật Sử dụng hợp lý - Section 107 of the US Copyright Act hoặc các lập luận bảo vệ khác phù hợp với loại lỗi). 
+Thư kháng nghị TIẾNG ANH phải bao gồm:
+- Tiêu đề thư trang trọng gửi tới Bộ phận Bản quyền YouTube (YouTube Copyright Department).
+- Các lập luận pháp lý chứng minh việc gỡ bỏ là do nhầm lẫn hoặc nhận diện sai (mistake or misidentification) dựa trên Fair Use (bình luận, tin tức, giáo dục, parody, tính chất phi thương mại, độ dài ngắn của đoạn trích, tính chất biến đổi transformative,...).
+- Đầy đủ các tuyên bố cam kết pháp lý bắt buộc của YouTube (BẮT BUỘC bằng tiếng Anh):
+  + "I consent to the jurisdiction of the Federal District Court for the judicial district in which my address is located, or if my address is outside of the United States, for any judicial district in which YouTube may be found, and that I will accept service of process from the person who provided notification under subsection (c)(1)(C) or an agent of such person."
+  + "I declare, under penalty of perjury, that I have a good faith belief that the material was removed or disabled as a result of mistake or misidentification of the material to be removed or disabled."
+- Các chỗ trống ký tên và thông tin liên hệ: [Full Legal Name], [Address], [Phone Number], [Email Address].
+
+YÊU CẦU TRẢ VỀ định dạng JSON thuần túy có cấu trúc như sau:
+{
+  "advice": "nội dung tư vấn tiếng Việt",
+  "appealLetter": "nội dung thư kháng cáo tiếng Anh"
+}
+Lưu ý: Không trả về bất kỳ ký tự nào ngoài JSON này (không bọc trong \`\`\`json).`;
 
       const response = await ai.models.generateContent({
         model,
         contents: prompt,
       });
 
-      const advice = response.text || 'Không có tư vấn.';
-      showToast(`TƯ VẤN AI (${channel?.name}): ${advice}`, 'success', 10000);
+      let responseText = response.text || '';
+      responseText = responseText.trim();
+      if (responseText.startsWith('```json')) {
+        responseText = responseText.substring(7);
+      }
+      if (responseText.endsWith('```')) {
+        responseText = responseText.substring(0, responseText.length - 3);
+      }
+      responseText = responseText.trim();
+
+      const parsed = JSON.parse(responseText);
+      setAdvisorResult({
+        strike,
+        channelName: channel?.name || 'Kênh đã xóa',
+        advice: parsed.advice || 'Không có tư vấn.',
+        appealLetter: parsed.appealLetter || 'Không có thư kháng cáo.'
+      });
+      showToast('Đã tạo thư kháng cáo và phân tích AI thành công!', 'success');
     } catch (error) {
-      showToast('Lỗi khi nhận tư vấn chính sách.', 'error');
+      console.error('Lỗi nhận tư vấn AI:', error);
+      showToast('Lỗi khi nhận tư vấn chính sách. Vui lòng thử lại.', 'error');
     } finally {
       setIsAdvising(null);
     }
+  };
+
+  const handleCopyAppeal = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    showToast('Đã sao chép thư kháng cáo vào bộ nhớ tạm!', 'success');
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSaveToHistory = (strikeId: string, text: string) => {
+    const todayStr = new Date().toLocaleDateString('vi-VN');
+    const newEntry = `${todayStr}: Đã gửi Kháng cáo pháp lý (DTA AI Writer)`;
+    
+    setStrikes(prev => prev.map(s => {
+      if (s.id === strikeId) {
+        return {
+          ...s,
+          status: 'appealed' as StrikeStatus,
+          appealHistory: [...(s.appealHistory || []), newEntry]
+        };
+      }
+      return s;
+    }));
+    
+    showToast('Đã chuyển trạng thái sang "Đang kháng cáo" và lưu vào lịch sử!', 'success');
+    setAdvisorResult(null);
   };
 
   return (
@@ -541,6 +625,119 @@ export function CopyrightManager({ strikes, setStrikes, channels, geminiApiKey }
             <div className="p-4 border-t border-gray-100 shrink-0 flex justify-end space-x-3 bg-gray-50">
               <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg transition-colors">Hủy</button>
               <button type="submit" form="strike-form" className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors">Lưu cảnh báo</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {advisorResult && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-100 animate-in fade-in zoom-in duration-200">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-5 border-b border-gray-100 shrink-0 bg-gradient-to-r from-red-50 to-blue-50/30">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-red-600 text-white rounded-xl shadow-md shadow-red-200">
+                  <BrainCircuit size={24} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    DTA AI Appeal Writer
+                    <span className="text-xs bg-red-100 text-red-800 font-bold px-2 py-0.5 rounded-full border border-red-200">
+                      Bản Quyền Pháp Lý Hoa Kỳ
+                    </span>
+                  </h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Kênh: <span className="font-semibold text-gray-700">{advisorResult.channelName}</span> | Lỗi: <span className="font-semibold text-gray-700">{advisorResult.strike.errorType || 'Chưa phân loại'}</span>
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setAdvisorResult(null)} 
+                className="text-gray-400 hover:text-gray-600 p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6 bg-slate-50/50">
+              {/* Left Column: AI Policy Advice (Vietnamese) */}
+              <div className="lg:col-span-5 flex flex-col space-y-4">
+                <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm flex flex-col h-full">
+                  <h3 className="text-sm font-bold text-gray-800 flex items-center border-b border-gray-100 pb-3 mb-3">
+                    <Sparkles size={16} className="text-red-500 mr-2" />
+                    Phân Tích & Tư Vấn Chiến Lược
+                  </h3>
+                  <div className="prose prose-sm max-w-none text-gray-600 text-xs overflow-y-auto flex-grow space-y-3 leading-relaxed">
+                    <ReactMarkdown>{advisorResult.advice}</ReactMarkdown>
+                  </div>
+                  <div className="mt-4 p-3 bg-red-50/50 border border-red-100 rounded-lg text-[10px] text-red-800 font-medium">
+                    Lưu ý: Mọi thư kháng nghị cần được kiểm tra kỹ thông tin cá nhân của chủ sở hữu trước khi gửi lên YouTube.
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: English Appeal Letter */}
+              <div className="lg:col-span-7 flex flex-col space-y-4">
+                <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm flex flex-col h-full relative">
+                  <div className="flex justify-between items-center border-b border-gray-100 pb-3 mb-3 shrink-0">
+                    <h3 className="text-sm font-bold text-gray-800 flex items-center">
+                      <FileText size={16} className="text-blue-500 mr-2" />
+                      Thư Kháng Nghị Bản Quyền (English)
+                    </h3>
+                    <button
+                      onClick={() => handleCopyAppeal(advisorResult.appealLetter)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center border ${
+                        copied 
+                          ? 'bg-green-50 border-green-200 text-green-700' 
+                          : 'bg-red-600 border-red-700 text-white hover:bg-red-700 hover:shadow-sm'
+                      }`}
+                    >
+                      {copied ? (
+                        <>
+                          <CheckCircle size={14} className="mr-1.5 animate-bounce" /> Đã sao chép!
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} className="mr-1.5" /> Sao chép thư
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Letter preview */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 font-mono text-[11px] text-slate-800 overflow-y-auto flex-grow max-h-[360px] whitespace-pre-wrap select-text leading-relaxed">
+                    {advisorResult.appealLetter}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2 justify-between items-center shrink-0">
+                    <span className="text-[10px] text-gray-400">
+                      Hãy điền đầy đủ các thông tin trong ngoặc vuông [...] trước khi gửi.
+                    </span>
+                    <button
+                      onClick={() => handleSaveToHistory(advisorResult.strike.id, advisorResult.appealLetter)}
+                      className="px-3.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg border border-gray-200 transition-colors flex items-center hover:bg-gray-200"
+                    >
+                      <History size={13} className="mr-1.5" />
+                      Lưu vào lịch sử & Đổi trạng thái
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-100 shrink-0 flex justify-between items-center bg-gray-50">
+              <div className="text-[10px] text-gray-500 font-medium">
+                Phát triển bởi <span className="font-bold text-gray-700">DTA Studio</span> - Chủ quản: <span className="font-bold text-red-600">Đức Trường</span> (0962.775.506)
+              </div>
+              <button 
+                type="button" 
+                onClick={() => setAdvisorResult(null)} 
+                className="px-5 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 rounded-xl shadow-sm transition-all"
+              >
+                Đóng
+              </button>
             </div>
           </div>
         </div>

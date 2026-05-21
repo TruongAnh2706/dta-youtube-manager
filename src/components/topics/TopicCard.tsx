@@ -2,6 +2,7 @@ import React from 'react';
 import { Topic, Staff } from '../../types';
 import { Edit2, Trash2, Globe, Target, BarChart3, ChevronUp, ChevronDown, Lightbulb, Tag, Hash, Youtube } from 'lucide-react';
 import { usePermissions } from '../../hooks/usePermissions';
+import { getSafeTopicColor } from '../../lib/color';
 
 interface TopicCardProps {
   topic: Topic;
@@ -24,7 +25,7 @@ export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand,
   return (
     <div 
       className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col transition-all hover:shadow-md"
-      style={{ border: `2px solid ${topic.color}`, borderTopWidth: '6px' }}
+      style={{ border: `2px solid ${getSafeTopicColor(topic.color)}`, borderTopWidth: '6px' }}
     >
       <div className="p-5">
         <div className="flex items-center justify-between mb-4">
@@ -37,7 +38,7 @@ export function TopicCard({ topic, onEdit, onDelete, isExpanded, onToggleExpand,
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer w-4 h-4"
               />
             )}
-            <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: topic.color }}></div>
+            <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: getSafeTopicColor(topic.color) }}></div>
             <div>
               <h3 className="font-bold text-gray-900 text-lg">{topic.name}</h3>
               <div className="flex items-center text-xs text-gray-500 mt-0.5">

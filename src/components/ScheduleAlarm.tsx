@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Channel, VideoTask } from '../types';
+import { Channel, VideoTask, SystemSettings } from '../types';
 import { BellRing, X, AlertTriangle, Volume2, Play, Square } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, parse, differenceInMinutes } from 'date-fns';
 import alarmSound from '../assets/alarm_dta.mp3';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../hooks/useToast';
+import { sendScheduleDelayAlert } from '../services/telegram';
+import { sendZaloScheduleDelayAlert } from '../services/zalo';
 
 interface ScheduleAlarmProps {
   channels: Channel[]; // Đã được lọc quyền từ App.tsx
@@ -12,9 +14,10 @@ interface ScheduleAlarmProps {
   setTasks: React.Dispatch<React.SetStateAction<VideoTask[]>>;
   workflowSteps: any[];
   currentUser: { role: string; name: string; id: string } | null;
+  systemSettings?: SystemSettings;
 }
 
-export function ScheduleAlarm({ channels, tasks, setTasks, workflowSteps, currentUser }: ScheduleAlarmProps) {
+export function ScheduleAlarm({ channels, tasks, setTasks, workflowSteps, currentUser, systemSettings }: ScheduleAlarmProps) {
   const { showToast } = useToast();
   const [activeAlarms, setActiveAlarms] = useState<
     { id: string; channelId: string; channelName: string; time: string; channelCode: string; dateStr: string }[]
@@ -25,6 +28,50 @@ export function ScheduleAlarm({ channels, tasks, setTasks, workflowSteps, curren
   const [isTestingAudio, setIsTestingAudio] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const playCountRef = useRef(0);
+
+  const notifiedDelayedTasksRef = useRef<Set<string>>(new Set());
+
+  // Quét các video bị trễ giờ đăng quá 15 phút để bắn tin nhắn báo động qua Telegram & Zalo
+  useEffect(() => {
+    const checkDelayedTasks = () => {
+      if (tasks.length === 0 || workflowSteps.length === 0) return;
+
+      const now = new Date();
+      const successStatus = workflowSteps[workflowSteps.length - 1].id;
+
+      tasks.forEach(task => {
+        // Chỉ quét các task chưa hoàn thành và có đầy đủ lịch đăng
+        if (task.status === successStatus || !task.publishTime || !task.dueDate) return;
+
+        try {
+          const taskDateTime = parse(`${task.dueDate} ${task.publishTime}`, 'yyyy-MM-dd HH:mm', new Date());
+          const delayMinutes = differenceInMinutes(now, taskDateTime);
+
+          // Nếu trễ từ 15 phút đến dưới 1 ngày (1440 phút) và chưa gửi báo động
+          if (delayMinutes >= 15 && delayMinutes < 1440) {
+            const taskKey = `${task.id}-${task.dueDate}-${task.publishTime}`;
+            if (!notifiedDelayedTasksRef.current.has(taskKey)) {
+              notifiedDelayedTasksRef.current.add(taskKey);
+
+              const channel = channels.find(c => c.id === task.channelId);
+              const channelName = channel ? channel.name : 'Kênh chưa rõ';
+
+              // Báo động song song qua Telegram Bot & Zalo Bot
+              sendScheduleDelayAlert(task.title, channelName, `${task.dueDate} ${task.publishTime}`, delayMinutes, systemSettings);
+              sendZaloScheduleDelayAlert(task.title, channelName, `${task.dueDate} ${task.publishTime}`, delayMinutes, systemSettings);
+            }
+          }
+        } catch (e) {
+          console.error("Lỗi parse ngày giờ task:", e);
+        }
+      });
+    };
+
+    const delayCheckInterval = setInterval(checkDelayedTasks, 60000); // Kiểm tra mỗi phút
+    checkDelayedTasks();
+
+    return () => clearInterval(delayCheckInterval);
+  }, [tasks, workflowSteps, channels, systemSettings]);
 
   // Auto-Unlock bằng Click ẩn: Khi sếp vừa vào web và bấm bất kỳ đâu, 
   // trình duyệt sẽ tự động ghi nhận là "Đã tương tác" và cho phép mở loa!

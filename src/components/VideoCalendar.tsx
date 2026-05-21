@@ -36,6 +36,7 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [calendarView, setCalendarView] = useState<'month' | 'week' | 'day'>('month'); // Mặc định là chế độ xem tháng
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
   const [editingTask, setEditingTask] = useState<VideoTask | null>(null);
@@ -56,7 +57,8 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
     notes: '',
     scriptOutline: '',
     priority: 'medium',
-    isClaimable: false
+    isClaimable: false,
+    bestPublishTimeExplanation: ''
   });
 
   const [isAIGenerating, setIsAIGenerating] = useState(false);
@@ -99,8 +101,26 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
     end: endDate,
   });
 
-  const nextMonth = () => setCurrentDate(addMonths(currentDate, 1));
-  const prevMonth = () => setCurrentDate(subMonths(currentDate, 1));
+  const nextDate = () => {
+    if (calendarView === 'month') {
+      setCurrentDate(addMonths(currentDate, 1));
+    } else if (calendarView === 'week') {
+      setCurrentDate(addDays(currentDate, 7));
+    } else {
+      setCurrentDate(addDays(currentDate, 1));
+    }
+  };
+
+  const prevDate = () => {
+    if (calendarView === 'month') {
+      setCurrentDate(subMonths(currentDate, 1));
+    } else if (calendarView === 'week') {
+      setCurrentDate(addDays(currentDate, -7));
+    } else {
+      setCurrentDate(addDays(currentDate, -1));
+    }
+  };
+
   const goToToday = () => setCurrentDate(new Date());
 
   const handleOpenModal = (task?: VideoTask, date?: Date) => {
@@ -120,7 +140,8 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
         notes: task.notes,
         scriptOutline: task.scriptOutline || '',
         priority: task.priority || 'medium',
-        isClaimable: task.isClaimable || false
+        isClaimable: task.isClaimable || false,
+        bestPublishTimeExplanation: task.bestPublishTimeExplanation || ''
       });
     } else {
       // Find current user in staff list to auto-assign
@@ -142,7 +163,8 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
         notes: '',
         scriptOutline: '',
         priority: 'medium',
-        isClaimable: false
+        isClaimable: false,
+        bestPublishTimeExplanation: ''
       });
     }
     setIsModalOpen(true);
@@ -201,18 +223,41 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
       const model = 'gemini-2.5-flash';
 
       const channel = channels.find(c => c.id === formData.channelId);
-      const prompt = `Dựa trên thông tin kênh YouTube: ${channel?.name}. Chủ đề: ${channel?.topicIds.join(', ')}. Hãy đề xuất 1 khung giờ đăng video tốt nhất trong ngày (HH:mm) để đạt reach cao nhất. Chỉ trả về đúng định dạng HH:mm.`;
+      const prompt = `Dựa trên thông tin kênh YouTube: "${channel?.name}". Chủ đề/Thị trường: "${channel?.topicIds.join(', ')}". 
+Hãy phân tích và đề xuất 1 khung giờ đăng video tốt nhất trong ngày để đạt tỷ lệ tiếp cận (reach) và giữ chân người xem cao nhất, đồng thời giải thích chiến lược ngắn gọn (tối đa 2 câu).
+YÊU CẦU: Trả về kết quả DUY NHẤT dưới dạng chuỗi JSON thô (không bọc trong tag code block), cấu trúc chính xác:
+{ "time": "HH:mm", "explanation": "đoạn lý giải chiến lược bằng Tiếng Việt..." }`;
 
       const response = await ai.models.generateContent({
         model,
         contents: prompt,
       });
 
-      const suggestedTime = response.text?.trim() || '18:00';
-      setFormData(prev => ({ ...prev, publishTime: suggestedTime, bestPublishTime: suggestedTime }));
-      showToast(`AI đề xuất khung giờ vàng: ${suggestedTime}`, 'success');
+      const text = response.text?.trim() || '';
+      let suggestedTime = '18:00';
+      let explanation = 'Phù hợp với hành vi lướt mạng xã hội sau giờ làm việc và học tập.';
+
+      try {
+        const cleanJsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const data = JSON.parse(cleanJsonStr);
+        if (data.time) suggestedTime = data.time;
+        if (data.explanation) explanation = data.explanation;
+      } catch (e) {
+        // Fallback trích xuất giờ nếu không parse được JSON
+        const match = text.match(/(\d{2}:\d{2})/);
+        if (match) suggestedTime = match[1];
+        explanation = text || 'AI đề xuất khung giờ vàng phù hợp với kênh.';
+      }
+
+      setFormData(prev => ({ 
+        ...prev, 
+        publishTime: suggestedTime, 
+        bestPublishTime: suggestedTime,
+        bestPublishTimeExplanation: explanation
+      }));
+      showToast(`AI đề xuất giờ vàng: ${suggestedTime}`, 'success');
     } catch (error) {
-      showToast('Lỗi khi gợi ý giờ đăng.', 'error');
+      showToast('Lỗi khi gọi AI gợi ý giờ đăng.', 'error');
     } finally {
       setIsScheduling(false);
     }
@@ -223,10 +268,16 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
 
   const virtualTasks = useMemo(() => {
     const vTasks: VideoTask[] = [];
-    const _monthStart = startOfMonth(currentDate);
-    const _monthEnd = endOfMonth(_monthStart);
-    const _startDate = startOfWeek(_monthStart, { weekStartsOn: 1 });
-    const _endDate = endOfWeek(_monthEnd, { weekStartsOn: 1 });
+    let _startDate = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 1 });
+    let _endDate = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 1 });
+
+    if (calendarView === 'week') {
+      _startDate = startOfWeek(addDays(currentDate, -7), { weekStartsOn: 1 });
+      _endDate = endOfWeek(addDays(currentDate, 7), { weekStartsOn: 1 });
+    } else if (calendarView === 'day') {
+      _startDate = startOfWeek(addDays(currentDate, -2), { weekStartsOn: 1 });
+      _endDate = endOfWeek(addDays(currentDate, 2), { weekStartsOn: 1 });
+    }
 
     const _calendarDays = eachDayOfInterval({ start: _startDate, end: _endDate });
     const realTaskKeys = new Set(tasks.map(t => `${t.channelId}-${t.dueDate}-${t.publishTime}`));
@@ -350,19 +401,60 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
   }, [viewableTasks, filterChannel, filterStaff]);
 
   return (
-    <div className="space-y-6 flex flex-col h-full">
+    <div className="space-y-6 flex flex-col h-full pb-12">
       {/* Header & KPI Summary */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Lịch Đăng & Quản lý KPI</h1>
-          <p className="text-sm text-gray-500 mt-1">Theo dõi tiến độ đăng video và hiệu suất nhân sự hàng ngày</p>
+          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+            <CalendarIcon className="text-blue-600" size={28} />
+            Lịch Đăng & Quản lý KPI DTA
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">Theo dõi tiến độ đăng video và hiệu suất nhân sự hàng ngày của DTA Studio.</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-white border border-gray-300 rounded-lg p-1 shadow-sm">
-            <button onClick={prevMonth} className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"><ChevronLeft size={18} /></button>
-            <button onClick={goToToday} className="px-3 py-1 text-sm font-medium hover:bg-gray-100 rounded-md transition-colors">Tháng {format(currentDate, 'MM/yyyy')}</button>
-            <button onClick={nextMonth} className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"><ChevronRight size={18} /></button>
+          {/* Bộ chuyển đổi calendarView Premium */}
+          <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200 shadow-sm shrink-0">
+            <button
+              onClick={() => setCalendarView('month')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                calendarView === 'month'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Tháng
+            </button>
+            <button
+              onClick={() => setCalendarView('week')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                calendarView === 'week'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Tuần
+            </button>
+            <button
+              onClick={() => setCalendarView('day')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                calendarView === 'day'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Ngày
+            </button>
+          </div>
+
+          <div className="flex bg-white border border-gray-300 rounded-lg p-1 shadow-sm shrink-0">
+            <button onClick={prevDate} className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"><ChevronLeft size={18} /></button>
+            <button onClick={goToToday} className="px-3 py-1 text-sm font-bold hover:bg-gray-100 rounded-md transition-colors text-gray-700">
+              {calendarView === 'month' && `Tháng ${format(currentDate, 'MM/yyyy')}`}
+              {calendarView === 'week' && `Tuần ${format(currentDate, 'w/yyyy', { weekStartsOn: 1 })} (${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'dd/MM')} - ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'dd/MM')})`}
+              {calendarView === 'day' && `Ngày ${format(currentDate, 'dd/MM/yyyy')}`}
+            </button>
+            <button onClick={nextDate} className="p-1.5 hover:bg-gray-100 rounded-md transition-colors"><ChevronRight size={18} /></button>
           </div>
 
           <select
@@ -432,79 +524,356 @@ export function VideoCalendar({ tasks, setTasks, channels, staffList, assets = [
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 flex-1 min-h-0">
-        {/* Main Calendar Grid */}
-        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden">
-          {/* Days of week header */}
-          <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
-            {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => (
-              <div key={day} className="py-2 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">
-                {day}
-              </div>
-            ))}
-          </div>
-
-          {/* Calendar days */}
-          <div className="flex-1 grid grid-cols-7 overflow-y-auto">
-            {calendarDays.map((day, idx) => {
-              const dayTasks = filteredTasks.filter(t => isSameDay(new Date(t.dueDate), day));
-              const isCurrentMonth = isSameMonth(day, currentDate);
-              const isTodayDay = isToday(day);
-              
-              const now = new Date();
-              now.setHours(0, 0, 0, 0);
-              const isPastDay = day < now;
-
-              return (
-                <div
-                  key={idx}
-                  onClick={() => {
-                    if (dayTasks.length > 0) {
-                      setSelectedDay(day);
-                    }
-                  }}
-                  className={`min-h-[100px] border-r border-b border-gray-100 p-2 transition-colors cursor-pointer hover:bg-gray-50/50 group 
-                    ${!isCurrentMonth ? 'bg-gray-50/30' : ''} 
-                    ${isTodayDay ? 'bg-blue-50 border-2 border-blue-400' : ''} 
-                    ${isPastDay && !isTodayDay ? 'opacity-50 grayscale bg-gray-50/60' : ''}
-                  `}
-                >
-                  <div className="flex justify-between items-center mb-2">
-                    <span className={`text-xs font-bold ${isTodayDay ? 'bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center' :
-                      isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
-                      }`}>
-                      {format(day, 'd')}
-                    </span>
-                    {hasPermission('calendar_edit') && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (setActiveTab) setActiveTab('tasks');
-                          else handleOpenModal(undefined, day);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-600 transition-opacity"
-                        title="Tạo lịch đăng mới"
-                      >
-                        <Plus size={14} />
-                      </button>
-                    )}
+        {/* Main Calendar Area */}
+        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col overflow-hidden transition-all">
+          
+          {/* MONTH VIEW */}
+          {calendarView === 'month' && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {/* Days of week header */}
+              <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50 shrink-0">
+                {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => (
+                  <div key={day} className="py-2 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">
+                    {day}
                   </div>
+                ))}
+              </div>
 
-                  {dayTasks.length > 0 && (
-                    <div className="flex flex-col gap-1 mt-2">
-                      <div className="text-center p-1.5 bg-blue-50 border border-blue-100 rounded-lg">
-                        <span className="text-lg font-black text-blue-600">{dayTasks.length}</span>
-                        <p className="text-[10px] text-blue-500 font-medium tracking-wide uppercase mt-0.5">Video</p>
+              {/* Calendar days */}
+              <div className="flex-1 grid grid-cols-7 overflow-y-auto">
+                {calendarDays.map((day, idx) => {
+                  const dayTasks = filteredTasks.filter(t => isSameDay(new Date(t.dueDate), day));
+                  const isCurrentMonth = isSameMonth(day, currentDate);
+                  const isTodayDay = isToday(day);
+                  
+                  const now = new Date();
+                  now.setHours(0, 0, 0, 0);
+                  const isPastDay = day < now;
+
+                  return (
+                    <div
+                      key={idx}
+                      onClick={() => {
+                        if (dayTasks.length > 0) {
+                          setSelectedDay(day);
+                        }
+                      }}
+                      className={`min-h-[100px] border-r border-b border-gray-100 p-2 transition-colors cursor-pointer hover:bg-gray-50/50 group 
+                        ${!isCurrentMonth ? 'bg-gray-50/30' : ''} 
+                        ${isTodayDay ? 'bg-blue-50 border-2 border-blue-400' : ''} 
+                        ${isPastDay && !isTodayDay ? 'opacity-50 grayscale bg-gray-50/60' : ''}
+                      `}
+                    >
+                      <div className="flex justify-between items-center mb-2">
+                        <span className={`text-xs font-bold ${isTodayDay ? 'bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center' :
+                          isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
+                          }`}>
+                          {format(day, 'd')}
+                        </span>
+                        {hasPermission('calendar_edit') && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (setActiveTab) setActiveTab('tasks');
+                              else handleOpenModal(undefined, day);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-600 transition-opacity"
+                            title="Tạo lịch đăng mới"
+                          >
+                            <Plus size={14} />
+                          </button>
+                        )}
                       </div>
-                      <div className="flex justify-between text-[10px] font-medium mt-1 px-1">
-                        <span className="text-gray-500">Đã đăng:</span>
-                        <span className="text-green-600 font-bold">{dayTasks.filter(t => t.status === 'published').length}</span>
+
+                      {dayTasks.length > 0 && (
+                        <div className="flex flex-col gap-1 mt-2">
+                          <div className="text-center p-1.5 bg-blue-50 border border-blue-100 rounded-lg">
+                            <span className="text-lg font-black text-blue-600">{dayTasks.length}</span>
+                            <p className="text-[10px] text-blue-500 font-medium tracking-wide uppercase mt-0.5">Video</p>
+                          </div>
+                          <div className="flex justify-between text-[10px] font-medium mt-1 px-1">
+                            <span className="text-gray-500">Đã đăng:</span>
+                            <span className="text-green-600 font-bold">{dayTasks.filter(t => t.status === 'published').length}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* WEEK VIEW */}
+          {calendarView === 'week' && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-white">
+              {/* Header các ngày trong tuần */}
+              <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50 shrink-0">
+                {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((dayName, index) => {
+                  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+                  const dayDate = addDays(weekStart, index);
+                  const isDayToday = isToday(dayDate);
+                  return (
+                    <div key={dayName} className={`py-2 text-center border-r border-gray-100 last:border-r-0 ${isDayToday ? 'bg-blue-50/50' : ''}`}>
+                      <div className="text-[10px] font-black text-gray-400 uppercase tracking-wider">{dayName}</div>
+                      <div className={`mt-0.5 inline-flex w-7 h-7 items-center justify-center text-xs font-bold rounded-full ${
+                        isDayToday ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-700'
+                      }`}>
+                        {format(dayDate, 'dd')}
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+
+              {/* Lưới các cột công việc theo tuần */}
+              <div className="flex-1 grid grid-cols-7 overflow-y-auto divide-x divide-gray-100">
+                {Array.from({ length: 7 }).map((_, index) => {
+                  const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+                  const dayDate = addDays(weekStart, index);
+                  const dayTasks = filteredTasks
+                    .filter(t => isSameDay(new Date(t.dueDate), dayDate))
+                    .sort((a, b) => (a.publishTime || '00:00').localeCompare(b.publishTime || '00:00'));
+
+                  return (
+                    <div 
+                      key={index} 
+                      className={`p-2 space-y-2 min-h-[300px] hover:bg-gray-50/30 transition-colors flex flex-col`}
+                      onClick={() => {
+                        if (dayTasks.length > 0) {
+                          setSelectedDay(dayDate);
+                        }
+                      }}
+                    >
+                      <div className="flex justify-between items-center text-[10px] font-bold text-gray-400 pb-1 border-b border-gray-50 shrink-0">
+                        <span>{dayTasks.length} Video</span>
+                        {hasPermission('calendar_edit') && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenModal(undefined, dayDate);
+                            }}
+                            className="p-0.5 text-gray-400 hover:text-blue-600 transition-colors"
+                          >
+                            <Plus size={12} />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+                        {dayTasks.map(task => {
+                          const channel = channels.find(c => c.id === task.channelId);
+                          const isPublished = task.status === 'published';
+                          
+                          return (
+                            <div
+                              key={task.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenModal(task);
+                              }}
+                              className={`p-2 rounded-lg border text-left transition-all hover:shadow-sm cursor-pointer ${
+                                isPublished 
+                                  ? 'bg-green-50/40 border-green-200 hover:bg-green-50/70' 
+                                  : 'bg-white border-gray-100 hover:border-gray-200'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1 mb-1">
+                                <span className={`font-mono text-[9px] font-bold px-1 py-0.5 rounded ${
+                                  isPublished ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-700'
+                                }`}>
+                                  {task.publishTime || '10:00'}
+                                </span>
+                                <span className={`text-[8px] font-bold uppercase ${
+                                  task.videoType === 'shorts' ? 'text-red-500' : 'text-blue-500'
+                                }`}>
+                                  {task.videoType === 'shorts' ? 'Shorts' : 'Long'}
+                                </span>
+                              </div>
+                              <h4 className="text-[11px] font-bold text-gray-900 line-clamp-2 leading-tight" title={task.title}>
+                                {task.title}
+                              </h4>
+                              {channel && (
+                                <div className="text-[9px] text-gray-500 font-bold truncate mt-1">
+                                  [{channel.channelCode}] {channel.name}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {dayTasks.length === 0 && (
+                          <div className="h-full flex items-center justify-center text-center py-10">
+                            <span className="text-[10px] text-gray-300 italic font-medium">Trống</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* DAY VIEW */}
+          {calendarView === 'day' && (
+            <div className="flex-1 flex flex-col overflow-hidden bg-white p-5">
+              {/* Thống kê nhanh ngày hôm nay */}
+              {(() => {
+                const dayTasks = filteredTasks
+                  .filter(t => isSameDay(new Date(t.dueDate), currentDate))
+                  .sort((a, b) => (a.publishTime || '00:00').localeCompare(b.publishTime || '00:00'));
+                const published = dayTasks.filter(t => t.status === 'published').length;
+                const pending = dayTasks.length - published;
+
+                return (
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-100 pb-4 mb-4 shrink-0 gap-3">
+                      <div>
+                        <h3 className="text-base font-bold text-gray-900 flex items-center gap-1.5">
+                          Danh sách video Ngày {format(currentDate, 'dd/MM/yyyy')}
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-0.5">Quản lý trực quan chi tiết quy trình sản xuất.</p>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-100">
+                          Tổng số: {dayTasks.length} video
+                        </span>
+                        <span className="px-2.5 py-1 bg-green-50 text-green-700 text-xs font-bold rounded-lg border border-green-100">
+                          Đã đăng: {published}
+                        </span>
+                        <span className="px-2.5 py-1 bg-red-50 text-red-700 text-xs font-bold rounded-lg border border-red-100">
+                          Còn lại: {pending}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+                      {dayTasks.map(task => {
+                        const channel = channels.find(c => c.id === task.channelId);
+                        const isPublished = task.status === 'published';
+                        
+                        return (
+                          <div 
+                            key={task.id}
+                            className={`p-4 rounded-xl border transition-all hover:shadow-md cursor-pointer flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${
+                              isPublished ? 'bg-green-50/30 border-green-200' : 'bg-white border-gray-200'
+                            }`}
+                            onClick={() => handleOpenModal(task)}
+                          >
+                            <div className="flex-1 flex items-start gap-4">
+                              {/* Vạch giờ giấc bên trái */}
+                              <div className="flex flex-col items-center justify-center shrink-0 w-16 p-2.5 bg-gray-50 rounded-lg border border-gray-100">
+                                <Clock size={16} className={`mb-1 ${isPublished ? 'text-green-600' : 'text-blue-600'}`} />
+                                <span className="font-mono text-xs font-bold text-gray-900">{task.publishTime || '10:00'}</span>
+                              </div>
+
+                              {/* Chi tiết ở giữa */}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                                  {channel && (
+                                    <span className="px-2 py-0.5 text-[10px] font-bold bg-indigo-50 text-indigo-700 rounded border border-indigo-100 uppercase tracking-wide">
+                                      [{channel.channelCode}] {channel.name}
+                                    </span>
+                                  )}
+                                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded uppercase tracking-wide ${
+                                    task.videoType === 'shorts' ? 'bg-red-50 text-red-700 border border-red-100' : 'bg-blue-50 text-blue-700 border border-blue-100'
+                                  }`}>
+                                    {task.videoType === 'shorts' ? 'Shorts' : 'Long Video'}
+                                  </span>
+                                  {task.priority === 'high' && (
+                                    <span className="px-2 py-0.5 text-[9px] font-extrabold bg-red-100 text-red-800 rounded animate-pulse">
+                                      ƯU TIÊN CAO
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                <h4 className="font-bold text-gray-950 text-sm leading-snug">{task.title}</h4>
+                                
+                                {/* AI Golden Hour Explanation (Lý giải AI) */}
+                                {task.bestPublishTimeExplanation && (
+                                  <div className="mt-2 p-2 bg-indigo-50/50 rounded-lg border border-indigo-100/50 text-[11px] text-indigo-800 flex items-start gap-1.5 max-w-2xl shadow-sm">
+                                    <Sparkles size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                                    <span className="font-medium">{task.bestPublishTimeExplanation}</span>
+                                  </div>
+                                )}
+
+                                {/* Links & Cost */}
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-2.5 text-xs text-gray-500 font-medium">
+                                  {task.scriptLink && (
+                                    <a 
+                                      href={task.scriptLink} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer" 
+                                      onClick={e => e.stopPropagation()}
+                                      className="text-blue-600 hover:underline flex items-center gap-1 font-bold"
+                                    >
+                                      📝 Kịch bản
+                                    </a>
+                                  )}
+                                  {task.thumbnailLink && (
+                                    <a 
+                                      href={task.thumbnailLink} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer" 
+                                      onClick={e => e.stopPropagation()}
+                                      className="text-amber-600 hover:underline flex items-center gap-1 font-bold"
+                                    >
+                                      🖼️ Thumbnail
+                                    </a>
+                                  )}
+                                  {task.productionCost ? (
+                                    <span className="text-gray-700 font-bold bg-gray-100 px-1.5 py-0.5 rounded">
+                                      Chi phí: {task.productionCost.toLocaleString('vi-VN')} VND
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Người phụ trách & Trạng thái Workflow */}
+                            <div className="flex flex-col items-start md:items-end gap-3 shrink-0 self-stretch md:self-auto border-t md:border-t-0 pt-3 md:pt-0 mt-3 md:mt-0 border-gray-100">
+                              <div className="flex flex-wrap items-center gap-1.5 justify-end">
+                                {(() => {
+                                  const channelStaffIds = staffList.filter(s => s.assignedChannelIds?.includes(channel?.id || '')).map(s => s.id);
+                                  const effectiveAssignees = task.assigneeIds && task.assigneeIds.length > 0 ? task.assigneeIds : channelStaffIds;
+                                  return effectiveAssignees.map(id => {
+                                    const staff = staffList.find(s => s.id === id);
+                                    return staff ? (
+                                      <span key={id} className="inline-flex items-center text-[10px] font-bold text-gray-700 bg-gray-100 px-2.5 py-1 rounded-full border border-gray-200 shadow-sm">
+                                        <User size={10} className="mr-1 text-gray-400" />
+                                        {staff.name}
+                                      </span>
+                                    ) : null;
+                                  });
+                                })()}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center shadow-sm ${
+                                  isPublished ? 'bg-green-100 text-green-800 border-green-200' : 'bg-blue-50 text-blue-800 border-blue-200'
+                                }`}>
+                                  {isPublished ? <CheckCircle size={14} className="mr-1" /> : <Loader size={14} className="mr-1 animate-spin" />}
+                                  {workflowSteps.find(s => s.id === task.status)?.label || task.status}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {dayTasks.length === 0 && (
+                        <div className="py-20 flex flex-col justify-center items-center text-center bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                          <CalendarIcon size={48} className="text-gray-300 mb-3" />
+                          <h4 className="text-sm font-bold text-gray-700">Trống lịch đăng</h4>
+                          <p className="text-xs text-gray-400 max-w-xs mt-1">Hôm nay không có video nào được lên lịch. Nhấn "Thêm lịch đăng" ở bên dưới để lên lịch.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
         </div>
 
         {/* Sidebar: Staff KPI & Performance */}

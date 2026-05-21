@@ -101,6 +101,7 @@ export type SourceChannel = {
   isViral?: boolean;
   viralVideoTitle?: string;
   viralVideoViews?: number;
+  isMonetized?: boolean | null;
   notes: string;
   allowedStaffIds?: string[]; // Mảng ID của những nhân viên được phép xem, admin mặc định full quyền
   status?: 'active' | 'dead';
@@ -167,6 +168,7 @@ export type VideoTask = {
   priority?: 'low' | 'medium' | 'high';
   workflowStep?: number;
   bestPublishTime?: string;
+  bestPublishTimeExplanation?: string;
   isClaimable?: boolean;
   linkedAssetIds?: string[];
   description?: string;
@@ -374,6 +376,13 @@ export type SystemSettings = {
   emailStatuses?: CustomStatus[];
   taskStatuses?: CustomStatus[];
   rolePermissions?: RolePermissions;
+  telegramBotToken?: string;
+  telegramChatId?: string;
+  telegramEnabled?: boolean;
+  zaloApiUrl?: string;
+  zaloAccessToken?: string;
+  zaloPhoneOrGroupId?: string;
+  zaloEnabled?: boolean;
 };
 
 

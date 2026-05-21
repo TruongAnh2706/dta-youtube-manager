@@ -43,5 +43,15 @@ CREATE TABLE IF NOT EXISTS channel_metrics (
   UNIQUE(channel_id, report_date)
 );
 
+-- 10. Cấp quyền bảng báo cáo BKT cho nhân sự đăng nhập và service_role
+GRANT ALL PRIVILEGES ON TABLE channel_metrics TO authenticated;
+GRANT ALL PRIVILEGES ON TABLE channel_metrics TO service_role;
+
+-- Kích hoạt và tạo chính sách RLS cho channel_metrics
+ALTER TABLE channel_metrics ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "auth_channel_metrics" ON channel_metrics;
+CREATE POLICY "auth_channel_metrics" ON channel_metrics FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
 -- Xóa cache để đảm bảo Typescript và DB schema ăn khớp
 NOTIFY pgrst, 'reload schema';
+

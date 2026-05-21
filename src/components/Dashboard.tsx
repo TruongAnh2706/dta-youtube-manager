@@ -4,6 +4,7 @@ import { Youtube, TrendingUp, AlertCircle, Hash, Users, DollarSign, Activity, Ch
 import { format, startOfYear, endOfYear, eachDayOfInterval, isSameDay, subDays, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { useToast } from '../hooks/useToast';
 import { GoogleGenAI } from '@google/genai';
+import { getSafeTopicColor } from '../lib/color';
 
 interface DashboardProps {
   channels: Channel[];
@@ -337,7 +338,7 @@ export function Dashboard({ channels, topics, staffList = [], financials = [], t
                     <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
                       <div
                         className="h-2.5 rounded-full transition-all duration-500"
-                        style={{ width: `${percentage}%`, backgroundColor: topic.color }}
+                        style={{ width: `${percentage}%`, backgroundColor: getSafeTopicColor(topic.color) }}
                       ></div>
                     </div>
                   </div>

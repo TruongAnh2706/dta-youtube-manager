@@ -27,7 +27,7 @@ import { ScheduleAlarm } from './components/ScheduleAlarm';
 import { ReportsDashboard } from './components/ReportsDashboard';
 import { ChangelogModal } from './components/ChangelogModal';
 import { BugReporter } from './components/BugReporter';
-import { LayoutDashboard, Youtube, Hash, Menu, Link as LinkIcon, Users, LineChart, Calendar as CalendarIcon, DollarSign, ShieldAlert, HardDrive, Wrench, Sparkles, Eye, EyeOff, Bell, Crosshair, LogOut, Database, Settings, ShieldCheck, Briefcase, Mail, ChevronDown, ChevronRight, FolderOpen, Search, Compass, BarChart3, PieChart } from 'lucide-react';
+import { LayoutDashboard, Youtube, Hash, Menu, Link as LinkIcon, Users, LineChart, Calendar as CalendarIcon, DollarSign, ShieldAlert, HardDrive, Wrench, Sparkles, Eye, EyeOff, Bell, Crosshair, LogOut, Database, Settings, ShieldCheck, Briefcase, Mail, ChevronDown, ChevronRight, ChevronLeft, FolderOpen, Search, Compass, BarChart3, PieChart } from 'lucide-react';
 import { RolePermissions, PermissionKey, StaffRole } from './types';
 
 import { PermissionsProvider } from './contexts/PermissionsContext';
@@ -76,6 +76,7 @@ function AppContent() {
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [privacyMode, setPrivacyMode] = useState(true); // Default to true for safety
   const [expandedGroups, setExpandedGroups] = useState<string[]>(['dashboard', 'channels']); // Expanded by default
 
@@ -136,18 +137,23 @@ function AppContent() {
     return (managedEmails || []).filter(e => e.assignedTo === currentStaff?.id);
   }, [managedEmails, isFullAccess, currentStaff]);
 
-  // Filter topics: member/leader chỉ thấy topics liên quan đến kênh được gán
+  // Filter topics: member/leader chỉ thấy topics liên quan đến kênh được gán hoặc kênh nguồn được quyền xem
   const viewableTopics = React.useMemo(() => {
     if (isFullAccess) return topics || [];
-    // Lấy tất cả topicIds từ các kênh được gán cho nhân sự này
+    // Lấy tất cả topicIds từ các kênh đích được gán cho nhân sự này
     const assignedTopicIds = new Set(
       viewableChannels.flatMap(c => c.topicIds || [])
     );
+    // Lấy tất cả topicIds từ tất cả kênh nguồn mà nhân sự này được phép xem
+    const sourceTopicIds = new Set(
+      viewableSourceChannels.flatMap(c => c.topicIds || [])
+    );
     return (topics || []).filter(t =>
       assignedTopicIds.has(t.id) ||
+      sourceTopicIds.has(t.id) ||
       (t.assignees || []).includes(currentStaff?.id || '')
     );
-  }, [topics, isFullAccess, viewableChannels]);
+  }, [topics, isFullAccess, viewableChannels, viewableSourceChannels, currentStaff]);
 
   if (isLoading) {
     return (
@@ -212,7 +218,7 @@ function AppContent() {
       items: [
         { id: 'reports_dashboard', label: 'Báo cáo Tổng thể', icon: BarChart3, permission: 'reports_view_all' },
         { id: 'finance', label: 'Tài chính (P&L)', icon: DollarSign, permission: 'finance_view' },
-        { id: 'monetization_report', label: 'Báo cáo BKT', icon: DollarSign, permission: 'finance_view' },
+        { id: 'monetization_report', label: 'Báo cáo BKT', icon: DollarSign, permission: 'channels_view' },
         { id: 'staff', label: 'Nhân sự (HRM)', icon: Users, permission: 'staff_view' },
       ]
     },
@@ -277,22 +283,33 @@ function AppContent() {
         {/* Sidebar */}
         <aside className={`
           fixed lg:sticky top-0 h-screen max-h-screen inset-y-0 left-0 z-30
-          w-[260px] bg-[#0d1117] text-gray-300 border-r border-[#1e232b]
-          transform transition-transform duration-300 ease-in-out flex flex-col
+          ${sidebarCollapsed ? 'w-[76px]' : 'w-[260px]'} bg-[#0d1117] text-gray-300 border-r border-[#1e232b]
+          transform transition-all duration-300 ease-in-out flex flex-col
           ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-          shadow-[4px_0_24px_rgba(0,0,0,0.5)] lg:shadow-none
+          shadow-[4px_0_24px_rgba(0,0,0,0.5)] lg:shadow-none relative
         `}>
+          {/* Collapse/Expand Toggle Button for Desktop */}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            title={sidebarCollapsed ? "Mở rộng thanh menu" : "Thu hẹp thanh menu"}
+            className="hidden lg:flex absolute -right-3 top-10 z-50 w-6 h-6 bg-[#0d1117] hover:bg-[#1a1f2c] border border-[#1e232b] hover:border-[#00ffff] rounded-full items-center justify-center text-gray-400 hover:text-[#00ffff] shadow-[0_0_10px_rgba(0,0,0,0.5)] hover:shadow-[0_0_10px_rgba(0,255,255,0.4)] transition-all duration-300 transform"
+          >
+            {sidebarCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+          </button>
+
           <div className="h-24 flex items-center justify-center border-b border-[#1e232b] shrink-0 bg-gradient-to-b from-[#0a0d13] to-[#0d1117] relative overflow-hidden group">
             <div className="absolute inset-0 bg-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <div className="flex flex-col items-center justify-center w-full z-10 p-2">
-              <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="DTA Manager YT Logo" className="w-14 h-14 object-contain drop-shadow-[0_0_12px_rgba(255,0,0,0.6)] mb-1" />
-              <span className="text-[16px] font-black bg-gradient-to-r from-white via-[#00ffff] to-[#00bfff] bg-clip-text text-transparent tracking-widest uppercase drop-shadow-md">
-                DTA Manager YT
-              </span>
+            <div className={`flex flex-col items-center justify-center w-full z-10 p-2 transition-all duration-300 ${sidebarCollapsed ? 'scale-90' : ''}`}>
+              <img src={`${import.meta.env.BASE_URL}Logo.png`} alt="DTA Manager YT Logo" className={`${sidebarCollapsed ? 'w-10 h-10' : 'w-14 h-14'} object-contain drop-shadow-[0_0_12px_rgba(255,0,0,0.6)] mb-1 transition-all duration-300`} />
+              {!sidebarCollapsed && (
+                <span className="text-[16px] font-black bg-gradient-to-r from-white via-[#00ffff] to-[#00bfff] bg-clip-text text-transparent tracking-widest uppercase drop-shadow-md whitespace-nowrap">
+                  DTA Manager YT
+                </span>
+              )}
             </div>
           </div>
 
-          <nav className="p-4 space-y-2 flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+          <nav className={`p-4 space-y-2 flex-1 overflow-y-auto min-h-0 custom-scrollbar transition-all duration-300 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
             {menuGroups.map((group) => {
               const visibleItems = group.items.filter(item => hasPermission(item.permission));
 
@@ -307,8 +324,10 @@ function AppContent() {
                 <div key={group.id} className="space-y-1">
                   <button
                     onClick={() => toggleGroup(group.id)}
+                    title={sidebarCollapsed ? group.label : undefined}
                     className={`
-                      w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300
+                      w-full flex items-center px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300
+                      ${sidebarCollapsed ? 'justify-center px-1' : 'justify-between'}
                       ${isGroupActive && !isExpanded
                         ? 'bg-gradient-to-r from-[#00ffff]/10 to-transparent text-[#00ffff] border-l-2 border-[#00ffff]'
                         : 'text-gray-400 hover:text-white hover:bg-[#1a1f2c] border-l-2 border-transparent'
@@ -316,14 +335,14 @@ function AppContent() {
                     `}
                   >
                     <div className="flex items-center">
-                      <GroupIcon size={16} className={`mr-2.5 ${isGroupActive ? 'text-[#00ffff]' : 'text-gray-500'}`} />
-                      <span className="uppercase tracking-wider text-[11px]">{group.label}</span>
+                      <GroupIcon size={16} className={`${sidebarCollapsed ? 'mr-0' : 'mr-2.5'} ${isGroupActive ? 'text-[#00ffff]' : 'text-gray-500'}`} />
+                      {!sidebarCollapsed && <span className="uppercase tracking-wider text-[11px] whitespace-nowrap">{group.label}</span>}
                     </div>
-                    {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    {!sidebarCollapsed && (isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />)}
                   </button>
 
                   {isExpanded && (
-                    <div className="pl-9 space-y-1 pb-1">
+                    <div className={`space-y-1 pb-1 transition-all duration-300 ${sidebarCollapsed ? 'pl-0 space-y-1.5' : 'pl-9'}`}>
                       {visibleItems.map((item) => {
                         const ItemIcon = item.icon;
                         const isActive = activeTab === item.id;
@@ -335,16 +354,18 @@ function AppContent() {
                               setActiveTab(item.id);
                               setIsMobileMenuOpen(false);
                             }}
+                            title={sidebarCollapsed ? item.label : undefined}
                             className={`
-                              w-full flex items-center px-3 py-2 rounded-lg text-xs transition-all duration-300 mb-0.5 mt-0.5
+                              w-full flex items-center rounded-lg text-xs transition-all duration-300 mb-0.5 mt-0.5
+                              ${sidebarCollapsed ? 'justify-center p-2' : 'px-3 py-2'}
                               ${isActive
                                 ? 'bg-[#1a2942] text-[#60a5fa] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] border border-[#2a3d5e]/80'
                                 : 'text-gray-400 hover:text-white hover:bg-[#1e232b] border border-transparent'
                               }
                             `}
                           >
-                            <ItemIcon size={14} className={`mr-2.5 transition-colors ${isActive ? 'text-[#60a5fa]' : 'text-gray-500'}`} />
-                            <span className={isActive ? "font-semibold tracking-wide" : "font-medium"}>{item.label}</span>
+                            <ItemIcon size={14} className={`${sidebarCollapsed ? 'mr-0' : 'mr-2.5'} transition-colors ${isActive ? 'text-[#60a5fa]' : 'text-gray-500'}`} />
+                            {!sidebarCollapsed && <span className={`${isActive ? "font-semibold tracking-wide" : "font-medium"} whitespace-nowrap`}>{item.label}</span>}
                           </button>
                         );
                       })}
@@ -355,28 +376,59 @@ function AppContent() {
             })}
           </nav>
 
-          <div className="p-4 border-t border-gray-800 shrink-0">
-            <div className="mb-3 flex justify-between items-center text-[10px] text-gray-500 font-mono border-b border-gray-800 pb-2">
-              <span className="flex items-center gap-1">
-                <Sparkles size={10} className="text-blue-400" />
-                {`v${import.meta.env.VITE_APP_VERSION || '1.0.3'}`}
-              </span>
-              <span>{import.meta.env.VITE_APP_BUILD_DATE || new Date().toLocaleDateString('vi-VN')}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-sm font-bold text-white mr-2">
-                  {(currentUser.name || '?').charAt(0)}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white">{currentUser.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{currentUser.role}</p>
-                </div>
+          <div className={`p-4 border-t border-gray-800 shrink-0 transition-all duration-300 ${sidebarCollapsed ? 'px-2' : 'px-4'}`}>
+            {!sidebarCollapsed ? (
+              <div className="mb-3 flex justify-between items-center text-[10px] text-gray-500 font-mono border-b border-gray-800 pb-2 transition-all duration-300">
+                <span className="flex items-center gap-1">
+                  <Sparkles size={10} className="text-blue-400" />
+                  {`v${import.meta.env.VITE_APP_VERSION || '1.0.3'}`}
+                </span>
+                <span>{import.meta.env.VITE_APP_BUILD_DATE || new Date().toLocaleDateString('vi-VN')}</span>
               </div>
-              <button onClick={logout} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">
-                <LogOut size={16} />
-              </button>
-            </div>
+            ) : (
+              <div className="mb-3 border-b border-gray-800 pb-2 text-center transition-all duration-300">
+                <span title={`v${import.meta.env.VITE_APP_VERSION || '1.0.3'} (${import.meta.env.VITE_APP_BUILD_DATE || new Date().toLocaleDateString('vi-VN')})`} className="block mx-auto cursor-pointer">
+                  <Sparkles size={12} className="text-blue-400 mx-auto animate-pulse" />
+                </span>
+              </div>
+            )}
+
+            {sidebarCollapsed ? (
+              <div className="flex flex-col items-center gap-3 py-1">
+                <div
+                  className="w-8 h-8 bg-gradient-to-br from-[#00ffff] to-[#00bfff] rounded-full flex items-center justify-center text-sm font-black text-slate-900 shadow-[0_0_12px_rgba(0,255,255,0.4)] cursor-pointer"
+                  title={`${currentUser.name} (${currentUser.role})`}
+                >
+                  {(currentUser.name || '?').charAt(0).toUpperCase()}
+                </div>
+                <button
+                  onClick={logout}
+                  title="Đăng xuất"
+                  className="p-2 text-gray-400 hover:text-[#ff0000] hover:bg-gray-800 rounded-lg transition-colors duration-300 hover:shadow-[0_0_8px_rgba(255,0,0,0.3)]"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between transition-all duration-300">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 bg-gradient-to-br from-[#00ffff] to-[#00bfff] rounded-full flex items-center justify-center text-sm font-black text-slate-900 shadow-[0_0_12px_rgba(0,255,255,0.4)] mr-2 shrink-0">
+                    {(currentUser.name || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-white truncate max-w-[120px]">{currentUser.name}</p>
+                    <p className="text-xs text-gray-500 capitalize truncate max-w-[120px]">{currentUser.role}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={logout}
+                  title="Đăng xuất"
+                  className="p-2 text-gray-400 hover:text-[#ff0000] hover:bg-[#1a1f2c] rounded-lg transition-colors shrink-0"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
+            )}
           </div>
         </aside>
 
@@ -390,6 +442,7 @@ function AppContent() {
             setTasks={setTasks}
             workflowSteps={systemSettings?.taskStatuses || []}
             currentUser={currentUser}
+            systemSettings={systemSettings}
           />
         )}
 
@@ -581,17 +634,19 @@ function AppContent() {
               {activeTab === 'monetization_report' && (
                 <MonetizationReport
                   channels={viewableChannels}
+                  setChannels={setChannels}
                   metrics={channelMetrics}
+                  setMetrics={setChannelMetrics}
                   currentStaff={currentStaff}
                   isAdmin={currentUser?.role === 'admin' || currentUser?.role === 'manager'}
                   staffList={staffList}
                 />
               )}
               {activeTab === 'copyright' && (
-                <CopyrightManager strikes={viewableStrikes} setStrikes={setStrikes} channels={viewableChannels} geminiApiKey={activeGeminiKey} />
+                <CopyrightManager strikes={viewableStrikes} setStrikes={setStrikes} channels={viewableChannels} geminiApiKey={activeGeminiKey} systemSettings={systemSettings} />
               )}
               {activeTab === 'assets' && (
-                <AssetManager assets={assets} setAssets={setAssets} proxies={proxies} setProxies={setProxies} topics={viewableTopics} geminiApiKey={activeGeminiKey} managedEmails={viewableEmails} setManagedEmails={setManagedEmails} staffList={staffList} />
+                <AssetManager assets={assets} setAssets={setAssets} proxies={proxies} setProxies={setProxies} topics={viewableTopics} geminiApiKey={activeGeminiKey} managedEmails={viewableEmails} setManagedEmails={setManagedEmails} staffList={staffList} settings={systemSettings} />
               )}
               {activeTab === 'tools' && (
                 <ToolManager licenses={licenses} setLicenses={setLicenses} privacyMode={privacyMode} topics={viewableTopics} geminiApiKey={activeGeminiKey} />
