@@ -5,7 +5,7 @@ import {
     Channel, Topic, Staff, SourceChannel, VideoTask, DailyReport,
     FinancialRecord, Transaction, FinancialAccount, TransactionCategory,
     Strike, Asset, Proxy, License, Competitor, SystemSettings, ManagedEmail,
-    CustomStatus, StaffRole, ChannelMetric
+    CustomStatus, StaffRole, ChannelMetric, AppealTemplate
 } from '../types';
 
 // ========================================
@@ -29,8 +29,13 @@ export const DEFAULT_TASK_STATUSES: CustomStatus[] = [
 
 /** Hàm gán default statuses cho settings nếu chưa có */
 function applyDefaultStatuses(settings: any): any {
+    if (!settings) settings = {};
     if (!settings.emailStatuses) settings.emailStatuses = DEFAULT_EMAIL_STATUSES;
     if (!settings.taskStatuses) settings.taskStatuses = DEFAULT_TASK_STATUSES;
+    if (!settings.youtubeApiKeys) settings.youtubeApiKeys = [];
+    if (!settings.geminiApiKeys) settings.geminiApiKeys = [];
+    if (settings.activeYoutubeKeyIndex === undefined || settings.activeYoutubeKeyIndex === null) settings.activeYoutubeKeyIndex = 0;
+    if (settings.activeGeminiKeyIndex === undefined || settings.activeGeminiKeyIndex === null) settings.activeGeminiKeyIndex = 0;
     return settings;
 }
 
@@ -59,6 +64,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
     const [competitors, setCompetitors] = useState<Competitor[]>([]);
     const [managedEmails, setManagedEmails] = useState<ManagedEmail[]>([]);
     const [channelMetrics, setChannelMetrics] = useState<ChannelMetric[]>([]);
+    const [appealTemplates, setAppealTemplates] = useState<AppealTemplate[]>([]);
     const [isWave1Loaded, setIsWave1Loaded] = useState(false);
     const [isWave2Loaded, setIsWave2Loaded] = useState(false);
     const isDataLoaded = isWave1Loaded && isWave2Loaded;
@@ -171,7 +177,8 @@ export function useAppData(currentUser: CurrentUserParam | null) {
             'licenses': setLicenses,
             'competitors': setCompetitors,
             'managed_emails': setManagedEmails,
-            'channel_metrics': setChannelMetrics
+            'channel_metrics': setChannelMetrics,
+            'appeal_templates': setAppealTemplates
         };
 
         if (tableName === 'system_settings') {
@@ -268,7 +275,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
                     try {
                         const [
                             tasksRes, financialsRes, transactionsRes, strikesRes, 
-                            assetsRes, proxiesRes, licensesRes, competitorsRes, emailsRes, metricsRes
+                            assetsRes, proxiesRes, licensesRes, competitorsRes, emailsRes, metricsRes, templatesRes
                         ] = await Promise.all([
                             supabase.from('video_tasks').select('*').limit(200), // P1.1: Giới hạn 200 dòng để tối ưu load time
                             supabase.from('financials').select('*').limit(1000),
@@ -279,7 +286,8 @@ export function useAppData(currentUser: CurrentUserParam | null) {
                             supabase.from('licenses').select('*'),
                             supabase.from('competitors').select('*'),
                             supabase.from('managed_emails').select('*').limit(200), // Tối ưu payload
-                            supabase.from('channel_metrics').select('*').limit(1000)
+                            supabase.from('channel_metrics').select('*').limit(1000),
+                            supabase.from('appeal_templates').select('*')
                         ]);
 
                         if (tasksRes.data) setTasks(toCamelCase(tasksRes.data));
@@ -292,6 +300,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
                         if (competitorsRes.data) setCompetitors(toCamelCase(competitorsRes.data));
                         if (emailsRes.data) setManagedEmails(toCamelCase(emailsRes.data));
                         if (metricsRes.data) setChannelMetrics(toCamelCase(metricsRes.data));
+                        if (templatesRes.data) setAppealTemplates(toCamelCase(templatesRes.data));
                         
                         setIsWave2Loaded(true);
                         console.log('✅ Wave 2 Load Complete!');
@@ -309,7 +318,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
     }, [currentUser]);
 
     const appData = {
-        channels, topics, staffList, sourceChannels, tasks, dailyReports, financials, transactions, accounts, categories, strikes, assets, proxies, licenses, competitors, managedEmails, channelMetrics, systemSettings
+        channels, topics, staffList, sourceChannels, tasks, dailyReports, financials, transactions, accounts, categories, strikes, assets, proxies, licenses, competitors, managedEmails, channelMetrics, appealTemplates, systemSettings
     };
 
     return {
@@ -322,6 +331,7 @@ export function useAppData(currentUser: CurrentUserParam | null) {
         licenses, setLicenses, competitors, setCompetitors,
         managedEmails, setManagedEmails,
         channelMetrics, setChannelMetrics,
+        appealTemplates, setAppealTemplates,
         systemSettings, setSystemSettings,
         activeYoutubeKey, activeGeminiKey, rotateYoutubeKey,
         handleRemoteUpdate, appData,

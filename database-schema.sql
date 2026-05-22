@@ -337,3 +337,6 @@ GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO service_role;
 
 -- Ngoại lệ: staff_list cần cho anon đọc (phục vụ login mapping)
 GRANT SELECT ON staff_list TO anon;
+
+-- Ngoại lệ: system_settings cần cho anon thao tác trực tiếp từ client để lưu/đọc API keys, status cấu hình
+GRANT ALL PRIVILEGES ON TABLE system_settings TO anon;

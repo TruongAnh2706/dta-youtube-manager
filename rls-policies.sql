@@ -19,7 +19,9 @@ ALTER TABLE financials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE financial_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transaction_categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
+-- ⚠️ ĐẶC BIỆT: Bảng system_settings (chứa API Keys, Statuses) cần được TẮT RLS 
+-- để client (kết nối qua anon_key) có thể đọc và cập nhật trực tiếp mà không bị lỗi.
+ALTER TABLE system_settings DISABLE ROW LEVEL SECURITY;
 ALTER TABLE proxies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE licenses ENABLE ROW LEVEL SECURITY;
 ALTER TABLE strikes ENABLE ROW LEVEL SECURITY;
@@ -67,10 +69,12 @@ CREATE POLICY "Chỉ người đã đăng nhập mới được SỬA staff_list
 CREATE POLICY "Chỉ người đã đăng nhập mới được THÊM staff_list" ON staff_list FOR INSERT TO authenticated WITH CHECK (true);
 CREATE POLICY "Chỉ người đã đăng nhập mới được XÓA staff_list" ON staff_list FOR DELETE TO authenticated USING (true);
 
--- 2. Bảng system_settings (Chứa API Key)
+-- 2. Bảng system_settings (Chứa API Key, Statuses)
 DROP POLICY IF EXISTS "settings_service_only" ON system_settings;
--- Chỉ Admin / Quản lý mới được xem hoặc sửa (trong thực tế nên check role, nhưng tạm thời mở cho authenticated)
-CREATE POLICY "Chỉ người đã đăng nhập mới được thao tác system_settings" ON system_settings FOR ALL TO authenticated USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "Chỉ người đã đăng nhập mới được thao tác system_settings" ON system_settings;
+GRANT ALL PRIVILEGES ON TABLE system_settings TO authenticated;
+GRANT ALL PRIVILEGES ON TABLE system_settings TO service_role;
+GRANT ALL PRIVILEGES ON TABLE system_settings TO anon;
 
 -- 3. Tất cả các bảng còn lại (channels, tasks, etc...)
 -- Bằng cách dùng 1 đoạn PL/pgSQL để loop qua tạo policy cho lẹ (nếu chạy script),

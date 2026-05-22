@@ -385,5 +385,15 @@ export type SystemSettings = {
   zaloEnabled?: boolean;
 };
 
+export type AppealTemplate = {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+
 
 

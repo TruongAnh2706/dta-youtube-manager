@@ -4,6 +4,15 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-05-22
+### 🚀 Tính năng mới (Features)
+- **Tìm kiếm & Đồng bộ A-Z Chủ đề:** Tích hợp bộ chọn chủ đề hỗ trợ tìm kiếm được sắp xếp theo bảng chữ cái từ A-Z ở tab Kênh Nguồn và Mạng lưới Kênh. Loại bỏ ô "Tất cả nhóm CĐ" dư thừa và cải thiện kích thước hiển thị đồng bộ, to rộng cân đối với các ô còn lại.
+- **Quản lý Mẫu Kháng Nghị:** Thêm tab "Mẫu Kháng Nghị" mới trong mục Hệ thống, hỗ trợ lưu trữ mẫu đơn kháng và tích hợp nút AI Spin (sử dụng Gemini) để sinh văn bản kháng nghị độc bản Plain Text siêu sạch, định dạng chuẩn và không chứa ký tự thừa, sẵn sàng copy.
+
+### 🐛 Sửa lỗi & Tối ưu hóa (Bug Fixes & Optimizations)
+- **Vá lỗi và Lưu trữ API Keys:** Khắc phục lỗi crash ứng dụng và lỗi thông báo đỏ ở góc trên màn hình khi bấm lưu nội dung bằng cách tối ưu hóa Database schema và cấu hình phân quyền bảo mật RLS cho bảng `system_settings` trong Supabase.
+- **Tích hợp Gemini API Keys:** Tự động import và lưu trữ vĩnh viễn danh sách Gemini Keys của Đức Trường vào hệ thống cài đặt, bảo toàn 100% YouTube API Key cũ mà không bị mất khi reload trang (F5).
+
 ## [1.0.4] - 2026-05-19
 ### 🐛 Sửa lỗi & Tối ưu hóa (Bug Fixes & Optimizations)
 - **Sửa lỗi TypeScript và Build Dự án:** Khắc phục triệt để các lỗi TypeScript ngăn cản dự án build thành công:

@@ -10,6 +10,7 @@ import { Copy, Check, Link2 } from 'lucide-react';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import { getSafeTopicColor } from '../lib/color';
+import { SearchableSelect } from './SearchableSelect';
 
 interface SourceChannelsProps {
   sourceChannels: SourceChannel[];
@@ -1270,7 +1271,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             placeholder="Tìm kiếm kênh nguồn..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500"
+            className="w-full pl-10 pr-4 h-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-sm"
           />
         </div>
         
@@ -1281,7 +1282,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
             setFilterNiche('all');
             setFilterTopic('all');
           }}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px]"
+          className="px-4 h-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px] text-sm text-gray-700"
         >
           <option value="all">Tất cả Quốc gia</option>
           {Array.from(new Set(viewableSourceChannels.map(c => c.country || 'Vietnam'))).filter(Boolean).map(country => (
@@ -1289,28 +1290,16 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           ))}
         </select>
         
-        <select
-          value={filterNiche}
-          onChange={e => {
-            setFilterNiche(e.target.value);
-            setFilterTopic('all');
-          }}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px]"
-        >
-          <option value="all">Tất cả Nhóm CĐ</option>
-          {Array.from(new Set(viewableTopics.filter(t => filterCountry === 'all' || (t.country || 'Vietnam') === filterCountry).map(t => t.niche || 'Khác'))).map(niche => (
-            <option key={niche} value={niche}>{niche}</option>
-          ))}
-        </select>
-        
-        <select
+        <SearchableSelect
+          options={viewableTopics
+            .filter(t => (filterCountry === 'all' || (t.country || 'Vietnam') === filterCountry))
+            .map(t => ({ id: t.id, name: t.name || '' }))}
           value={filterTopic}
-          onChange={e => setFilterTopic(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white min-w-[150px]"
-        >
-          <option value="all">Tất cả tag chủ đề</option>
-          {viewableTopics.filter(t => (filterCountry === 'all' || (t.country || 'Vietnam') === filterCountry) && (filterNiche === 'all' || (t.niche || 'Khác') === filterNiche)).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
+          onChange={setFilterTopic}
+          placeholder="Tất cả tag chủ đề"
+          ringColorClass="focus:ring-orange-500"
+          className="min-w-[220px]"
+        />
       </div>
 
       {(isBulkImporting || isAIAnalyzing) && (

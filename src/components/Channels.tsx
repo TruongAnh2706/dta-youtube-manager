@@ -11,6 +11,7 @@ import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../contexts/AuthContext';
 import { getSafeTopicColor } from '../lib/color';
+import { SearchableSelect } from './SearchableSelect';
 interface ChannelsProps {
   channels: Channel[];
   setChannels: React.Dispatch<React.SetStateAction<Channel[]>>;
@@ -56,6 +57,7 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
   const [topicSearchTerm, setTopicSearchTerm] = useState('');
   const [sourceCountryFilter, setSourceCountryFilter] = useState<string>('all');
   const [newSourceChannelUrl, setNewSourceChannelUrl] = useState('');
+  const [isScanningSource, setIsScanningSource] = useState(false);
   const [emailSearchTerm, setEmailSearchTerm] = useState('');
   const [showEmailDropdown, setShowEmailDropdown] = useState(false);
 
@@ -800,6 +802,119 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
     setStaffList(newStaffList);
   };
 
+  const handleScanAndAddSource = async () => {
+    if (!newSourceChannelUrl) {
+      showToast('Vui lòng nhập đường dẫn kênh nguồn cần quét!', 'warning');
+      return;
+    }
+
+    const cleanUrl = newSourceChannelUrl.trim();
+    const isDupSource = sourceChannels.some(sc => sc.url.toLowerCase() === cleanUrl.toLowerCase());
+    if (isDupSource) {
+      showToast('Kênh nguồn này đã tồn tại trong danh sách!', 'warning');
+      return;
+    }
+
+    setIsScanningSource(true);
+    showToast('Đang quét dữ liệu kênh nguồn từ YouTube...', 'info');
+
+    try {
+      const fetchedInfo = await fetchYoutubeChannelInfo(cleanUrl, youtubeApiKey, false);
+      const newSourceId = crypto.randomUUID();
+
+      // 1. Đồng bộ Quốc gia:
+      let country = sourceCountryFilter !== 'all' ? sourceCountryFilter : undefined;
+      if (!country) {
+        const firstTopicId = formData.topicIds?.[0];
+        country = topics.find(t => t.id === firstTopicId)?.country;
+      }
+      if (!country) {
+        country = 'Vietnam';
+      }
+
+      // 2. Đồng bộ Chủ đề:
+      const finalTopics = [...(formData.topicIds || [])];
+      if (sourceTopicFilter && sourceTopicFilter !== 'all' && !finalTopics.includes(sourceTopicFilter)) {
+        finalTopics.push(sourceTopicFilter);
+      }
+
+      // 3. Phân quyền nhân sự:
+      let finalStaffIds = [...editingStaffIds];
+      if (currentUser && currentUser.role !== 'admin' && !finalStaffIds.includes(currentUser.id)) {
+        finalStaffIds.push(currentUser.id);
+      }
+
+      // 4. Tính toán số liệu giống thêm thủ công
+      const avgViews = fetchedInfo.totalViews && fetchedInfo.videoCount ? Math.floor(fetchedInfo.totalViews / fetchedInfo.videoCount) : 0;
+
+      const newSource: SourceChannel = {
+        id: newSourceId,
+        name: fetchedInfo.name || 'Nguồn Mới (DTA Auto)',
+        url: cleanUrl,
+        avatarUrl: fetchedInfo.avatarUrl || undefined,
+        subscribers: fetchedInfo.subscribers || 0,
+        totalViews: fetchedInfo.totalViews || 0,
+        videoCount: fetchedInfo.videoCount || 0,
+        country: country,
+        topicIds: finalTopics,
+        rating: fetchedInfo.calculatedRating || 3,
+        uploadFrequency: 'Hàng tuần',
+        averageViews: avgViews,
+        notes: 'Thêm nhanh từ tạo kênh DTA',
+        allowedStaffIds: finalStaffIds,
+        isMonetized: null,
+        description: fetchedInfo.description || undefined,
+        publishedAt: fetchedInfo.publishedAt || undefined,
+        latestVideos: fetchedInfo.latestVideos || [],
+        topVideos: fetchedInfo.topVideos || [],
+        status: 'active'
+      };
+
+      // 5. Lưu trực tiếp vào CSDL Supabase
+      const { error: insertErr } = await supabase.from('source_channels').insert([{
+        id: newSourceId,
+        name: newSource.name,
+        url: newSource.url,
+        avatar_url: newSource.avatarUrl,
+        subscribers: newSource.subscribers,
+        views: newSource.totalViews,
+        video_count: newSource.videoCount,
+        country: newSource.country,
+        topic_ids: newSource.topicIds,
+        rating: newSource.rating,
+        upload_frequency: newSource.uploadFrequency,
+        average_views: newSource.averageViews,
+        notes: newSource.notes,
+        allowed_staff_ids: newSource.allowedStaffIds,
+        status: newSource.status,
+        is_monetized: newSource.isMonetized,
+        description: newSource.description,
+        published_at: newSource.publishedAt,
+        latest_videos: newSource.latestVideos,
+        top_videos: newSource.topVideos
+      }]);
+
+      if (insertErr) {
+        showToast(`Lỗi lưu CSDL kênh nguồn: ${insertErr.message}`, 'error');
+      } else {
+        setSourceChannels(prev => [...prev, newSource]);
+        
+        // Tự động tích chọn liên kết kênh vừa quét vào form kênh đích chính
+        setFormData(prev => ({
+          ...prev,
+          linkedSourceChannelIds: [...new Set([...(prev.linkedSourceChannelIds || []), newSourceId])]
+        }));
+        
+        setNewSourceChannelUrl('');
+        showToast(`Đã quét và liên kết thành công kênh: "${newSource.name}"!`, 'success');
+      }
+    } catch (apiErr: any) {
+      showToast(`Lỗi cào dữ liệu YouTube: ${apiErr.message}`, 'error');
+    } finally {
+      setIsScanningSource(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -839,14 +954,30 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
         const newSourceId = crypto.randomUUID();
         let fetchedInfo: any = {};
         try {
-          // Cào thông tin thực tế từ YouTube API V3
-          fetchedInfo = await fetchYoutubeChannelInfo(newSourceChannelUrl, youtubeApiKey, true);
+          // Cào thông tin thực tế từ YouTube API V3 (không bỏ qua video nổi bật để đầy đủ thông tin)
+          fetchedInfo = await fetchYoutubeChannelInfo(newSourceChannelUrl, youtubeApiKey, false);
         } catch (apiErr: any) {
           showToast(`Không lấy được dữ liệu YouTube: ${apiErr.message}. Sử dụng thông tin tạm thời.`, 'warning');
         }
 
-        const firstTopicId = formData.topicIds?.[0];
-        const country = topics.find(t => t.id === firstTopicId)?.country || 'Vietnam';
+        // 1. Đồng bộ Quốc gia:
+        let country = sourceCountryFilter !== 'all' ? sourceCountryFilter : undefined;
+        if (!country) {
+          const firstTopicId = formData.topicIds?.[0];
+          country = topics.find(t => t.id === firstTopicId)?.country;
+        }
+        if (!country) {
+          country = 'Vietnam';
+        }
+
+        // 2. Đồng bộ Chủ đề:
+        const finalTopics = [...(formData.topicIds || [])];
+        if (sourceTopicFilter && sourceTopicFilter !== 'all' && !finalTopics.includes(sourceTopicFilter)) {
+          finalTopics.push(sourceTopicFilter);
+        }
+
+        // 3. Tính toán số liệu
+        const avgViews = fetchedInfo.totalViews && fetchedInfo.videoCount ? Math.floor(fetchedInfo.totalViews / fetchedInfo.videoCount) : 0;
 
         const newSource: SourceChannel = {
           id: newSourceId,
@@ -857,16 +988,21 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           totalViews: fetchedInfo.totalViews || 0,
           videoCount: fetchedInfo.videoCount || 0,
           country: country,
-          topicIds: formData.topicIds || [],
-          rating: 3,
-          uploadFrequency: 'Medium',
-          averageViews: 0,
+          topicIds: finalTopics,
+          rating: fetchedInfo.calculatedRating || 3,
+          uploadFrequency: 'Hàng tuần',
+          averageViews: avgViews,
           notes: 'Thêm tự động từ tạo kênh DTA',
           allowedStaffIds: finalStaffIds,
-          isMonetized: fetchedInfo.isMonetized ?? null
+          isMonetized: null,
+          description: fetchedInfo.description || undefined,
+          publishedAt: fetchedInfo.publishedAt || undefined,
+          latestVideos: fetchedInfo.latestVideos || [],
+          topVideos: fetchedInfo.topVideos || [],
+          status: 'active'
         };
 
-        // Lưu vào DB đồng bộ
+        // Lưu vào DB đồng bộ đầy đủ thông tin
         const { error: insertErr } = await supabase.from('source_channels').insert([{
            id: newSourceId,
            name: newSource.name,
@@ -882,8 +1018,12 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
            average_views: newSource.averageViews,
            notes: newSource.notes,
            allowed_staff_ids: newSource.allowedStaffIds,
-           status: 'active',
-           is_monetized: newSource.isMonetized
+           status: newSource.status,
+           is_monetized: newSource.isMonetized,
+           description: newSource.description,
+           published_at: newSource.publishedAt,
+           latest_videos: newSource.latestVideos,
+           top_videos: newSource.topVideos
         }]);
 
         if (insertErr) {
@@ -1166,10 +1306,16 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
           ))}
         </select>
         
-        <select value={filterTopic} onChange={e => setFilterTopic(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
-          <option value="all">Tất cả tag chủ đề</option>
-          {topics.filter(t => filterNiche === 'all' || (t.niche || 'Khác') === filterNiche).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
+        <SearchableSelect
+          options={topics
+            .filter(t => filterNiche === 'all' || (t.niche || 'Khác') === filterNiche)
+            .map(t => ({ id: t.id, name: t.name || '' }))}
+          value={filterTopic}
+          onChange={setFilterTopic}
+          placeholder="Tất cả tag chủ đề"
+          ringColorClass="focus:ring-blue-500"
+          className="min-w-[180px]"
+        />
 
         {hasPermission('staff_view') && (
           <select value={filterStaff} onChange={e => setFilterStaff(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-[150px]">
@@ -1823,11 +1969,36 @@ export function Channels({ channels, setChannels, topics, setTopics, proxies, pr
                     <div className="flex space-x-2">
                       <input
                         type="url"
-                        placeholder="https://youtube.com/..."
+                        placeholder="https://youtube.com/@handle hoặc /channel/UC..."
                         value={newSourceChannelUrl}
                         onChange={e => setNewSourceChannelUrl(e.target.value)}
-                        className="flex-1 border border-emerald-200 rounded-lg px-3 py-2 text-sm focus:ring-emerald-500"
+                        disabled={isScanningSource}
+                        className="flex-1 border border-emerald-200 rounded-lg px-3 py-2 text-sm focus:ring-emerald-500 bg-white"
                       />
+                      <button
+                        type="button"
+                        onClick={handleScanAndAddSource}
+                        disabled={isScanningSource || !newSourceChannelUrl}
+                        className={`px-3 py-2 text-xs font-bold text-white rounded-lg transition-all flex items-center shrink-0 shadow-sm ${
+                          isScanningSource
+                            ? 'bg-emerald-400 cursor-not-allowed'
+                            : newSourceChannelUrl
+                              ? 'bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-700 hover:to-teal-600 active:scale-[0.98] ring-2 ring-emerald-300 ring-offset-1'
+                              : 'bg-gray-300 cursor-not-allowed text-gray-500'
+                        }`}
+                      >
+                        {isScanningSource ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" />
+                            Đang Quét...
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5 mr-1" />
+                            Quét & Thêm
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
 

@@ -18,6 +18,7 @@ import { CopyrightManager } from './components/CopyrightManager';
 import { AssetManager } from './components/AssetManager';
 import { ToolManager } from './components/ToolManager';
 import { SeoAi } from './components/SeoAi';
+import { AppealTemplates } from './components/AppealTemplates';
 import { AutoSaveService } from './components/AutoSaveService';
 import { MonetizationReport } from './components/MonetizationReport';
 import { AdminSettings } from './components/AdminSettings';
@@ -46,6 +47,7 @@ function AppContent() {
     licenses, setLicenses, competitors, setCompetitors,
     managedEmails, setManagedEmails,
     channelMetrics, setChannelMetrics,
+    appealTemplates, setAppealTemplates,
     systemSettings, setSystemSettings,
     activeYoutubeKey, activeGeminiKey, rotateYoutubeKey,
     handleRemoteUpdate, appData
@@ -227,6 +229,7 @@ function AppContent() {
       label: 'Hệ Thống',
       icon: Settings,
       items: [
+        { id: 'appeal_templates', label: 'Mẫu Kháng Nghị', icon: Sparkles, permission: 'dashboard_view' },
         { id: 'copyright', label: 'Bản quyền (Strikes)', icon: ShieldAlert, permission: 'copyright_view' },
         { id: 'tools', label: 'License & Proxy', icon: Wrench, permission: 'settings_view' },
         { id: 'permissions', label: 'Phân quyền Role', icon: ShieldCheck, permission: 'settings_edit_permissions' },
@@ -640,6 +643,14 @@ function AppContent() {
                   currentStaff={currentStaff}
                   isAdmin={currentUser?.role === 'admin' || currentUser?.role === 'manager'}
                   staffList={staffList}
+                />
+              )}
+              {activeTab === 'appeal_templates' && (
+                <AppealTemplates
+                  appealTemplates={appealTemplates}
+                  setAppealTemplates={setAppealTemplates}
+                  geminiApiKey={activeGeminiKey}
+                  currentUser={currentUser}
                 />
               )}
               {activeTab === 'copyright' && (

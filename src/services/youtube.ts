@@ -32,11 +32,11 @@ export async function fetchYoutubeChannelInfo(url: string, apiKey: string, skipT
   let apiUrl = '';
 
   if (channelIdMatch) {
-    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&id=${channelIdMatch[1]}&key=${apiKey}`;
+    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&id=${encodeURIComponent(channelIdMatch[1])}&key=${apiKey}`;
   } else if (handleMatch) {
-    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&forHandle=%40${handleMatch[1]}&key=${apiKey}`;
+    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&forHandle=%40${encodeURIComponent(handleMatch[1])}&key=${apiKey}`;
   } else if (customMatch) {
-    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&forUsername=${customMatch[2]}&key=${apiKey}`;
+    apiUrl = `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&forUsername=${encodeURIComponent(customMatch[2])}&key=${apiKey}`;
   } else {
     throw new Error("URL không hợp lệ. Vui lòng dùng link dạng youtube.com/channel/UC... hoặc youtube.com/@handle");
   }
