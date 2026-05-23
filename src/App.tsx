@@ -632,6 +632,7 @@ function AppContent() {
                   tasks={viewableTasks}
                   staffList={staffList}
                   geminiApiKey={activeGeminiKey}
+                  channelMetrics={channelMetrics}
                 />
               )}
               {activeTab === 'monetization_report' && (

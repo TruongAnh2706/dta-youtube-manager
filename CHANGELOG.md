@@ -4,6 +4,17 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-05-23
+### 🚀 Tính năng mới (Features)
+- **Đồng bộ Báo cáo BKT sang Báo cáo Tài chính (P&L):**
+  - Tích hợp nút **"🔄 Đồng bộ từ BKT"** cho phép tự động gộp doanh thu thực tế (được cào hàng ngày) của tất cả các kênh BKT trong tháng sang hạch toán P&L chỉ với 1-click. Hệ thống tự động tính toán chi phí lương của nhân viên quản lý phân bổ và thưởng KPI 5% doanh thu cực kỳ chính xác.
+  - Tự động hiển thị các kênh có doanh thu BKT nhưng **chưa hạch toán P&L** kèm nhãn nổi bật `"⚠️ Chưa hạch toán P&L"` và nút **"⚡ Đồng bộ nhanh"** trực tiếp tại dòng kênh đó để thao tác tiện lợi nhất.
+  - Đối soát doanh thu thông minh: Tự động bôi cảnh báo màu cam kèm dòng chữ `"⚠️ Lệch BKT: [Doanh thu BKT]"` nếu nhân viên tự ý sửa đổi/hạch toán lệch doanh thu P&L so với dữ liệu thực tế cào từ YouTube.
+  - Bổ sung banner cảnh báo thông minh ở đầu bảng P&L, tự động thông báo số tiền doanh thu BKT chưa hạch toán để quản lý (Đức Trường) luôn nắm bắt vấn đề và đưa ra hành động tức thời.
+
+### 🐛 Sửa lỗi & Tối ưu hóa (Bug Fixes & Optimizations)
+- **Sửa lỗi Xóa báo cáo P&L:** Sửa lỗi hệ thống khi bấm xóa báo cáo tài chính kênh do gọi sai tên bảng (`financial_records` thay vì `financials` của database Supabase).
+
 ## [1.1.1] - 2026-05-23
 ### 🐛 Sửa lỗi & Tối ưu hóa (Bug Fixes & Optimizations)
 - **Vá lỗi Lưu Kênh Nguồn Liên Kết:** Khắc phục triệt để lỗi `"Could not find the 'views' column of 'source_channels' in the schema cache"` khi cào và liên kết kênh nguồn mới vào kênh trong mạng lưới. Đồng bộ hóa toàn bộ tên cột gửi lên CSDL từ `views` sang `total_views` chuẩn theo cấu trúc của Supabase. Bản vá đã được tối ưu hóa và kiểm thử build hoàn chỉnh để anh Đức Trường test vận hành thực tế.

@@ -31,6 +31,7 @@ interface FinanceManagerProps {
   tasks: VideoTask[];
   staffList: Staff[];
   geminiApiKey?: string;
+  channelMetrics?: any[];
 }
 
 type FinanceTab = 'overview' | 'transactions' | 'accounts' | 'channels';
@@ -40,7 +41,8 @@ export function FinanceManager({
   transactions, setTransactions,
   accounts, setAccounts,
   categories, setCategories,
-  channels, tasks, staffList, geminiApiKey
+  channels, tasks, staffList, geminiApiKey,
+  channelMetrics = []
 }: FinanceManagerProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
@@ -239,7 +241,7 @@ export function FinanceManager({
   const handleDeleteRecord = async (id: string) => {
     if (confirm('Bạn có chắc chắn muốn xóa báo cáo này?')) {
       setFinancials(prev => prev.filter(f => f.id !== id));
-      const { error } = await supabase.from('financial_records').delete().eq('id', id);
+      const { error } = await supabase.from('financials').delete().eq('id', id);
       if (error) showToast(`Lỗi xóa: ${error.message}`, 'error');
     }
   };
@@ -394,7 +396,217 @@ export function FinanceManager({
   };
 
   const filteredRecords = financials.filter(f => f.month === filterMonth);
+
+  // --- Đồng bộ Doanh thu BKT ---
+  const bktSummaryByChannel = useMemo(() => {
+    const summary: Record<string, { totalRevenueVnd: number; totalViews: number; rpm: number }> = {};
+    channelMetrics.forEach(m => {
+      if (m.reportDate && m.reportDate.startsWith(filterMonth)) {
+        const channelId = m.channelId;
+        if (!summary[channelId]) {
+          summary[channelId] = { totalRevenueVnd: 0, totalViews: 0, rpm: 0 };
+        }
+        summary[channelId].totalRevenueVnd += Number(m.revenueVnd || 0);
+        summary[channelId].totalViews += Number(m.views || 0);
+      }
+    });
+
+    Object.keys(summary).forEach(channelId => {
+      const item = summary[channelId];
+      if (item.totalViews > 0) {
+        item.rpm = Math.round(item.totalRevenueVnd / (item.totalViews / 1000));
+      }
+    });
+
+    return summary;
+  }, [channelMetrics, filterMonth]);
+
+  const mergedChannelRecords = useMemo(() => {
+    return channels.map(channel => {
+      const record = filteredRecords.find(r => r.channelId === channel.id);
+      const bktData = bktSummaryByChannel[channel.id];
+      if (!record && !bktData) return null;
+      return { channel, record, bktData };
+    }).filter(Boolean) as Array<{
+      channel: Channel;
+      record: FinancialRecord | undefined;
+      bktData: { totalRevenueVnd: number; totalViews: number; rpm: number } | undefined;
+    }>;
+  }, [channels, filteredRecords, bktSummaryByChannel]);
+
+  const totalBktRevenue = useMemo(() => {
+    return Object.values(bktSummaryByChannel).reduce((sum, item) => sum + item.totalRevenueVnd, 0);
+  }, [bktSummaryByChannel]);
+
   const totalChannelRevenue = filteredRecords.reduce((sum, r) => sum + r.revenue, 0);
+  const unrecordedBktRevenue = Math.max(0, totalBktRevenue - totalChannelRevenue);
+
+  const handleSyncFromBKT = async () => {
+    const channelsWithBkt = Object.keys(bktSummaryByChannel);
+    if (channelsWithBkt.length === 0) {
+      showToast(`Không tìm thấy dữ liệu doanh thu BKT nào trong tháng ${filterMonth}.`, 'info');
+      return;
+    }
+
+    setIsSyncing(true);
+    let syncCount = 0;
+    let errCount = 0;
+
+    try {
+      const syncPromises = channelsWithBkt.map(async (channelId) => {
+        const bktData = bktSummaryByChannel[channelId];
+        const channel = channels.find(c => c.id === channelId);
+        if (!channel) return;
+
+        const existingRecord = financials.find(f => f.channelId === channelId && f.month === filterMonth);
+        const recordId = existingRecord?.id || crypto.randomUUID();
+        const revenue = Math.round(bktData.totalRevenueVnd);
+        const rpm = Math.round(bktData.rpm);
+
+        let expenses = existingRecord?.expenses || 0;
+        if (!existingRecord) {
+          const managers = staffList.filter(s => s.assignedChannelIds && s.assignedChannelIds.includes(channelId));
+          let calculatedExpenses = 0;
+          managers.forEach(staff => {
+            const totalChannels = staff.assignedChannelIds.length;
+            if (totalChannels > 0) {
+              calculatedExpenses += staff.baseSalary / totalChannels;
+            }
+          });
+          calculatedExpenses += revenue * 0.05;
+          expenses = Math.round(calculatedExpenses);
+        }
+
+        const netProfit = revenue - expenses;
+        const roi = expenses > 0 ? (netProfit / expenses) * 100 : 0;
+
+        const syncData = {
+          id: recordId,
+          channel_id: channelId,
+          month: filterMonth,
+          revenue,
+          rpm,
+          cpm: existingRecord?.cpm || 0,
+          expenses,
+          net_profit: netProfit,
+          roi,
+          notes: existingRecord?.notes || 'Đồng bộ tự động từ Báo cáo BKT'
+        };
+
+        const { error } = await supabase.from('financials').upsert([syncData], { onConflict: 'channel_id,month' });
+        
+        if (error) {
+          console.error(`Lỗi đồng bộ kênh ${channel.name}:`, error);
+          errCount++;
+        } else {
+          syncCount++;
+          
+          const localRecord: FinancialRecord = {
+            id: recordId,
+            channelId,
+            month: filterMonth,
+            revenue,
+            rpm,
+            cpm: syncData.cpm,
+            expenses,
+            netProfit,
+            roi,
+            notes: syncData.notes
+          };
+
+          setFinancials(prev => {
+            const idx = prev.findIndex(f => f.channelId === channelId && f.month === filterMonth);
+            if (idx > -1) {
+              return prev.map((f, i) => i === idx ? localRecord : f);
+            } else {
+              return [...prev, localRecord];
+            }
+          });
+        }
+      });
+
+      await Promise.all(syncPromises);
+
+      if (errCount > 0) {
+        showToast(`Đã đồng bộ ${syncCount} kênh. Lỗi ${errCount} kênh.`, 'warning');
+      } else {
+        showToast(`Đồng bộ thành công P&L cho ${syncCount} kênh từ Báo cáo BKT!`, 'success');
+      }
+    } catch (err: any) {
+      showToast(`Lỗi đồng bộ dữ liệu: ${err.message}`, 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSyncSingleChannel = async (channelId: string) => {
+    const bktData = bktSummaryByChannel[channelId];
+    const channel = channels.find(c => c.id === channelId);
+    if (!bktData || !channel) {
+      showToast('Không có dữ liệu BKT cho kênh này.', 'error');
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const recordId = crypto.randomUUID();
+      const revenue = Math.round(bktData.totalRevenueVnd);
+      const rpm = Math.round(bktData.rpm);
+
+      const managers = staffList.filter(s => s.assignedChannelIds && s.assignedChannelIds.includes(channelId));
+      let calculatedExpenses = 0;
+      managers.forEach(staff => {
+        const totalChannels = staff.assignedChannelIds.length;
+        if (totalChannels > 0) {
+          calculatedExpenses += staff.baseSalary / totalChannels;
+        }
+      });
+      calculatedExpenses += revenue * 0.05;
+      const expenses = Math.round(calculatedExpenses);
+
+      const netProfit = revenue - expenses;
+      const roi = expenses > 0 ? (netProfit / expenses) * 100 : 0;
+
+      const syncData = {
+        id: recordId,
+        channel_id: channelId,
+        month: filterMonth,
+        revenue,
+        rpm,
+        cpm: 0,
+        expenses,
+        net_profit: netProfit,
+        roi,
+        notes: 'Đồng bộ nhanh từ Báo cáo BKT'
+      };
+
+      const { error } = await supabase.from('financials').upsert([syncData], { onConflict: 'channel_id,month' });
+      if (error) {
+        showToast(`Lỗi lưu CSDL: ${error.message}`, 'error');
+      } else {
+        const localRecord: FinancialRecord = {
+          id: recordId,
+          channelId,
+          month: filterMonth,
+          revenue,
+          rpm,
+          cpm: 0,
+          expenses,
+          netProfit,
+          roi,
+          notes: syncData.notes
+        };
+
+        setFinancials(prev => [...prev, localRecord]);
+        showToast(`Đã đồng bộ dữ liệu tài chính cho kênh: "${channel.name}"!`, 'success');
+      }
+    } catch (err: any) {
+      showToast(`Lỗi: ${err.message}`, 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const totalChannelExpenses = filteredRecords.reduce((sum, r) => sum + r.expenses, 0);
   const totalChannelProfit = totalChannelRevenue - totalChannelExpenses;
 
@@ -427,6 +639,18 @@ export function FinanceManager({
           )}
           {activeTab === 'channels' && hasPermission('finance_edit') && (
             <div className="flex gap-2">
+              <button
+                onClick={handleSyncFromBKT}
+                disabled={isSyncing}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors whitespace-nowrap shadow-sm"
+              >
+                {isSyncing ? (
+                  <RefreshCw size={16} className="mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw size={16} className="mr-2" />
+                )}
+                Đồng bộ từ BKT
+              </button>
               <button
                 onClick={() => handleOpenRecordModal()}
                 className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors whitespace-nowrap"
@@ -703,6 +927,24 @@ export function FinanceManager({
               </div>
             </div>
 
+            {unrecordedBktRevenue > 10000 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-center justify-between text-amber-800 text-sm">
+                <div className="flex items-center">
+                  <ShieldAlert size={18} className="mr-2 text-amber-600 shrink-0 text-amber-500 animate-bounce" />
+                  <span>
+                    Phát hiện có <strong>{formatCurrency(unrecordedBktRevenue)}</strong> doanh thu từ Báo cáo BKT tháng này chưa được đồng bộ hạch toán sang Báo cáo Tài chính P&L.
+                  </span>
+                </div>
+                <button
+                  onClick={handleSyncFromBKT}
+                  disabled={isSyncing}
+                  className="bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white font-semibold px-3 py-1.5 rounded text-xs transition-colors shrink-0 whitespace-nowrap ml-4 shadow-sm flex items-center"
+                >
+                  <RefreshCw size={12} className={`mr-1 ${isSyncing ? 'animate-spin' : ''}`} /> Đồng bộ tất cả
+                </button>
+              </div>
+            )}
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -718,43 +960,108 @@ export function FinanceManager({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {filteredRecords.map(record => {
-                      const channel = channels.find(c => c.id === record.channelId);
+                    {mergedChannelRecords.map(({ channel, record, bktData }) => {
+                      const hasRecord = !!record;
+                      const displayRev = hasRecord ? record.revenue : (bktData ? bktData.totalRevenueVnd : 0);
+                      const displayRpm = hasRecord ? record.rpm : (bktData ? bktData.rpm : 0);
+                      const displayCpm = hasRecord ? record.cpm : 0;
+                      const displayExp = hasRecord ? record.expenses : 0;
+                      const displayNet = hasRecord ? record.netProfit : 0;
+                      
+                      const isLekh = hasRecord && bktData && Math.abs(record.revenue - bktData.totalRevenueVnd) > 1000;
+
                       return (
-                        <tr key={record.id} className="hover:bg-gray-50 transition-colors">
+                        <tr 
+                          key={channel.id} 
+                          className={`hover:bg-gray-50 transition-colors ${!hasRecord ? 'bg-amber-50/10' : ''}`}
+                        >
                           <td className="p-4 font-medium text-gray-900 flex items-center">
-                            <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200 mr-2 font-bold">
+                            <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200 mr-2 font-bold shrink-0">
                               {channel?.channelCode || '??'}
                             </span>
-                            {channel?.name || 'Kênh đã xóa'}
-                          </td>
-                          <td className="p-4 text-emerald-600 font-medium">{formatCurrency(record.revenue)}</td>
-                          <td className="p-4 text-xs text-gray-600">{formatCurrency(record.rpm)} / {formatCurrency(record.cpm)}</td>
-                          <td className="p-4 text-red-500">{formatCurrency(record.expenses)}</td>
-                          <td className={`p-4 font-bold ${record.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                            {formatCurrency(record.netProfit)}
+                            <div className="flex flex-col">
+                              <span className={!hasRecord ? 'text-gray-500 font-normal' : ''}>
+                                {channel?.name || 'Kênh đã xóa'}
+                              </span>
+                              {!hasRecord && (
+                                <span className="text-[9px] font-semibold text-amber-600 mt-0.5">
+                                  ⚠️ Chưa hạch toán P&L
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-4">
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${(record.roi || 0) >= 100 ? 'bg-green-100 text-green-700' :
-                              (record.roi || 0) > 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
-                              }`}>
-                              {(record.roi || 0).toFixed(1)}%
-                            </span>
+                            <div className="flex flex-col">
+                              {hasRecord ? (
+                                <span className="text-emerald-600 font-medium">{formatCurrency(record.revenue)}</span>
+                              ) : (
+                                <span className="text-gray-400 italic text-sm">{formatCurrency(displayRev)} <span className="text-[9px] bg-gray-100 px-1 rounded text-gray-500 font-normal">BKT</span></span>
+                              )}
+                              {isLekh && (
+                                <span className="text-[9px] text-amber-600 font-semibold mt-0.5" title="Doanh thu hạch toán lệch so với thực tế cào từ BKT">
+                                  ⚠️ Lệch BKT: {formatCurrency(bktData.totalRevenueVnd)}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-4 text-xs text-gray-600">
+                            {formatCurrency(displayRpm)} / {formatCurrency(displayCpm)}
+                          </td>
+                          <td className="p-4">
+                            {hasRecord ? (
+                              <span className="text-red-500">{formatCurrency(record.expenses)}</span>
+                            ) : (
+                              <span className="text-gray-400 italic text-xs">Chưa tính</span>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            {hasRecord ? (
+                              <span className={`font-bold ${record.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                {formatCurrency(record.netProfit)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 italic text-xs">Chưa tính</span>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            {hasRecord ? (
+                              <span className={`px-2 py-1 rounded-full text-xs font-bold ${(record.roi || 0) >= 100 ? 'bg-green-100 text-green-700' :
+                                (record.roi || 0) > 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+                                }`}>
+                                {(record.roi || 0).toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 italic text-xs">N/A</span>
+                            )}
                           </td>
                           <td className="p-4 text-right">
                             <div className="flex justify-end space-x-2">
-                              {hasPermission('finance_edit') && (
-                                <button onClick={() => handleOpenRecordModal(record)} className="p-1 text-gray-400 hover:text-emerald-600"><Edit2 size={16} /></button>
-                              )}
-                              {hasPermission('finance_edit') && (
-                                <button onClick={() => handleDeleteRecord(record.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                              {hasRecord ? (
+                                <>
+                                  {hasPermission('finance_edit') && (
+                                    <button onClick={() => handleOpenRecordModal(record)} className="p-1 text-gray-400 hover:text-emerald-600" title="Sửa hạch toán"><Edit2 size={16} /></button>
+                                  )}
+                                  {hasPermission('finance_edit') && (
+                                    <button onClick={() => handleDeleteRecord(record.id)} className="p-1 text-gray-400 hover:text-red-600" title="Xóa hạch toán"><Trash2 size={16} /></button>
+                                  )}
+                                </>
+                              ) : (
+                                hasPermission('finance_edit') && (
+                                  <button 
+                                    onClick={() => handleSyncSingleChannel(channel.id)} 
+                                    className="px-2 py-1 text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-100 hover:bg-indigo-100 rounded flex items-center transition-colors shadow-sm animate-pulse"
+                                    title="Tạo nhanh hạch toán & đồng bộ doanh thu từ BKT"
+                                  >
+                                    <RefreshCw size={10} className="mr-1" /> Đồng bộ
+                                  </button>
+                                )
                               )}
                             </div>
                           </td>
                         </tr>
                       );
                     })}
-                    {filteredRecords.length === 0 && (
+                    {mergedChannelRecords.length === 0 && (
                       <tr><td colSpan={7} className="p-12 text-center text-gray-500">Chưa có dữ liệu báo cáo kênh cho tháng này.</td></tr>
                     )}
                   </tbody>
