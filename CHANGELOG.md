@@ -4,6 +4,15 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-05-23
+### 🚀 Tính năng mới (Features)
+- **Cấu hình Tỷ giá Quy đổi USD/VND động:** Bổ sung ô nhập **"Tỷ giá quy đổi (USD/VND)"** trong phần Cài đặt Tài chính (Admin Settings). Admin có thể chủ động cập nhật tỷ giá sát thực tế thay vì fix cứng `25.400 đ/USD` trong code. Tỷ giá mới được áp dụng toàn hệ thống cho tháng hiện tại (số liệu hàng ngày không thay đổi, chỉ tổng kênh và báo cáo tài chính P&L).
+- **🧮 Máy tính Tỷ giá thực tế từ YouTube Studio:** Tích hợp widget "Máy tính tỷ giá" cho phép Admin nhập một cặp số liệu USD & VND bất kỳ của một ngày trên YouTube Studio, hệ thống tự động tính toán `VND ÷ USD` để ra tỷ giá chuẩn xác nhất của tháng đó. Chỉ cần bấm **"⚡ Áp dụng tỷ giá này"** là tỷ giá mới được lưu tự động lên Supabase và áp dụng toàn bộ Báo cáo BKT.
+- **Đồng bộ tỷ giá sang Báo cáo BKT:** Component `MonetizationReport` giờ đây nhận tỷ giá động từ `systemSettings.exchangeRate` thay vì giá trị cố định, đảm bảo số tiền VND quy đổi tạm tính khớp sát nhất với YouTube Studio thực tế.
+
+### 📄 Database Migration
+- Tạo tệp `migration-add-exchange-rate.sql` để bổ sung cột `exchange_rate` vào bảng `system_settings` trong Supabase.
+
 ## [1.2.0] - 2026-05-23
 ### 🚀 Tính năng mới (Features)
 - **Đồng bộ Báo cáo BKT sang Báo cáo Tài chính (P&L):**

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Channel, ChannelMetric, Staff } from '../types';
+import { Channel, ChannelMetric, Staff, SystemSettings } from '../types';
 import { useToast } from '../hooks/useToast';
 import { Calendar, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Edit3, X, Eye, Lock, ChevronRight, ChevronDown, ChevronUp, Users, User, Percent, BarChart3 } from 'lucide-react';
 import { format, subDays, isAfter, isBefore, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, getDaysInMonth, parseISO } from 'date-fns';
@@ -14,6 +14,7 @@ interface MonetizationReportProps {
   currentStaff: Staff | null;
   isAdmin: boolean;
   staffList: Staff[];
+  systemSettings: SystemSettings;
 }
 
 const translateError = (err: any): string => {
@@ -44,7 +45,7 @@ const translateError = (err: any): string => {
   return msg || 'Đã xảy ra lỗi không xác định trên hệ thống.';
 };
 
-export function MonetizationReport({ channels, setChannels, metrics, setMetrics, currentStaff, isAdmin, staffList }: MonetizationReportProps) {
+export function MonetizationReport({ channels, setChannels, metrics, setMetrics, currentStaff, isAdmin, staffList, systemSettings }: MonetizationReportProps) {
   const { showToast } = useToast();
   const [checkingMonetizationIds, setCheckingMonetizationIds] = useState<string[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -60,8 +61,12 @@ export function MonetizationReport({ channels, setChannels, metrics, setMetrics,
 
   // Lấy tỷ giá
   useEffect(() => {
-    setCurrentExchangeRate(25400);
-  }, []);
+    if (systemSettings?.exchangeRate) {
+      setCurrentExchangeRate(systemSettings.exchangeRate);
+    } else {
+      setCurrentExchangeRate(25400);
+    }
+  }, [systemSettings]);
 
   // Lọc các kênh được phép xem
   const viewableChannels = useMemo(() => {

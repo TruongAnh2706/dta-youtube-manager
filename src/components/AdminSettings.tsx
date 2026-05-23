@@ -32,6 +32,26 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [testingZalo, setTestingZalo] = useState(false);
 
+  // Exchange Rate Calculator State & Logic (DTA Studio Premium)
+  const [calcUsd, setCalcUsd] = useState('');
+  const [calcVnd, setCalcVnd] = useState('');
+
+  const calculatedRate = React.useMemo(() => {
+    const usd = parseFloat(calcUsd);
+    const vnd = parseFloat(calcVnd);
+    if (isNaN(usd) || isNaN(vnd) || usd <= 0 || vnd <= 0) return 0;
+    return Math.round(vnd / usd);
+  }, [calcUsd, calcVnd]);
+
+  const handleApplyCalculatedRate = () => {
+    if (calculatedRate > 0) {
+      setSettings(prev => ({ ...prev, exchangeRate: calculatedRate }));
+      showToast(`Đã áp dụng tỷ giá quy đổi mới: ${calculatedRate.toLocaleString('vi-VN')} đ/USD`, 'success');
+      setCalcUsd('');
+      setCalcVnd('');
+    }
+  };
+
   const handleTestTelegram = async () => {
     if (!settings.telegramBotToken || !settings.telegramChatId) {
       showToast('Vui lòng điền đầy đủ Token và Chat ID trước khi test!', 'error');
@@ -396,6 +416,128 @@ export function AdminSettings({ settings, setSettings }: AdminSettingsProps) {
                   Khôi phục Dữ liệu (Import JSON)
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* Cấu hình Tài chính & Hoa hồng (Premium DTA Studio) */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900 flex items-center">
+              <SlidersHorizontal className="mr-2 text-emerald-500 animate-pulse" size={20} /> Cấu hình Tài chính & Hoa hồng (P&L)
+            </h2>
+            <p className="text-xs text-gray-500">
+              Thiết lập tỷ lệ phần trăm thưởng KPI doanh thu cho nhân sự vận hành trực tiếp và tỷ lệ hoa hồng/phí quản lý admin phân bổ cho các kênh YouTube.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  % Thưởng KPI Nhân sự
+                </label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={settings.kpiBonusPercent !== undefined ? settings.kpiBonusPercent : 5}
+                    onChange={e => setSettings(prev => ({ ...prev, kpiBonusPercent: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                    className="w-full border border-gray-300 rounded-lg pl-3 pr-8 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500 font-semibold"
+                  />
+                  <span className="absolute right-3 top-2 text-sm text-gray-500 font-bold">%</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  % Hoa hồng Quản lý (Admin)
+                </label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={settings.managementCommissionPercent !== undefined ? settings.managementCommissionPercent : 0}
+                    onChange={e => setSettings(prev => ({ ...prev, managementCommissionPercent: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                    className="w-full border border-gray-300 rounded-lg pl-3 pr-8 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500 font-semibold"
+                  />
+                  <span className="absolute right-3 top-2 text-sm text-gray-500 font-bold">%</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  Tỷ giá quy đổi (USD/VND)
+                </label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    min="1"
+                    step="1"
+                    value={settings.exchangeRate !== undefined ? settings.exchangeRate : 25400}
+                    onChange={e => setSettings(prev => ({ ...prev, exchangeRate: Math.max(1, parseFloat(e.target.value) || 0) }))}
+                    className="w-full border border-gray-300 rounded-lg pl-3 pr-16 py-2 text-sm focus:border-emerald-500 focus:ring-emerald-500 font-semibold"
+                  />
+                  <span className="absolute right-3 top-2 text-xs text-gray-500 font-bold">đ/USD</span>
+                </div>
+              </div>
+
+              {/* Máy tính tỷ giá thực tế từ YouTube (DTA Studio Premium) */}
+              <div className="md:col-span-2 bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-col space-y-2">
+                <span className="text-xs font-bold text-gray-800 flex items-center">
+                  🧮 Máy tính tỷ giá thực tế từ YouTube Studio
+                </span>
+                <p className="text-[10px] text-gray-500 leading-normal">
+                  Nhập một số liệu thực tế bất kỳ của một ngày trên YouTube (cả USD và VND) để hệ thống tự động chia và tính tỷ giá chuẩn xác của tháng đó.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Số USD trên YouTube</label>
+                    <input 
+                      type="number" 
+                      min="0.01" 
+                      step="0.01" 
+                      placeholder="VD: 2.78"
+                      value={calcUsd}
+                      onChange={e => setCalcUsd(e.target.value)}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs font-semibold focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-600 mb-0.5">Số VNĐ tương ứng</label>
+                    <input 
+                      type="number" 
+                      min="1" 
+                      step="1" 
+                      placeholder="VD: 73234"
+                      value={calcVnd}
+                      onChange={e => setCalcVnd(e.target.value)}
+                      className="w-full border border-gray-300 rounded-md px-2 py-1 text-xs font-semibold focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+                {calculatedRate > 0 && (
+                  <div className="flex items-center justify-between bg-emerald-50 border border-emerald-250 rounded-lg p-2 text-xs">
+                    <span className="text-emerald-800 font-medium">
+                      👉 Tỷ giá tính được: <strong className="text-emerald-700">{calculatedRate.toLocaleString('vi-VN')} đ/USD</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleApplyCalculatedRate}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center transition-colors shadow-sm"
+                    >
+                      ⚡ Áp dụng tỷ giá này
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-gray-100 flex justify-between items-center text-[10px] text-gray-400">
+              <span>Đồng bộ tự động lên Supabase</span>
+              <span className="font-semibold text-emerald-600">DTA Studio</span>
             </div>
           </div>
 

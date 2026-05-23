@@ -36,6 +36,9 @@ function applyDefaultStatuses(settings: any): any {
     if (!settings.geminiApiKeys) settings.geminiApiKeys = [];
     if (settings.activeYoutubeKeyIndex === undefined || settings.activeYoutubeKeyIndex === null) settings.activeYoutubeKeyIndex = 0;
     if (settings.activeGeminiKeyIndex === undefined || settings.activeGeminiKeyIndex === null) settings.activeGeminiKeyIndex = 0;
+    if (settings.kpiBonusPercent === undefined || settings.kpiBonusPercent === null) settings.kpiBonusPercent = 5;
+    if (settings.managementCommissionPercent === undefined || settings.managementCommissionPercent === null) settings.managementCommissionPercent = 0;
+    if (settings.exchangeRate === undefined || settings.exchangeRate === null) settings.exchangeRate = 25400;
     return settings;
 }
 
@@ -76,7 +79,10 @@ export function useAppData(currentUser: CurrentUserParam | null) {
         auditLogs: [],
         trainingDocs: [],
         emailStatuses: DEFAULT_EMAIL_STATUSES,
-        taskStatuses: DEFAULT_TASK_STATUSES
+        taskStatuses: DEFAULT_TASK_STATUSES,
+        kpiBonusPercent: 5,
+        managementCommissionPercent: 0,
+        exchangeRate: 25400
     });
 
     // Get active YouTube API Key

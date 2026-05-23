@@ -32,6 +32,7 @@ interface FinanceManagerProps {
   staffList: Staff[];
   geminiApiKey?: string;
   channelMetrics?: any[];
+  systemSettings?: SystemSettings;
 }
 
 type FinanceTab = 'overview' | 'transactions' | 'accounts' | 'channels';
@@ -42,10 +43,13 @@ export function FinanceManager({
   accounts, setAccounts,
   categories, setCategories,
   channels, tasks, staffList, geminiApiKey,
-  channelMetrics = []
+  channelMetrics = [],
+  systemSettings
 }: FinanceManagerProps) {
   const { hasPermission } = usePermissions();
   const { showToast } = useToast();
+  const kpiPercent = systemSettings?.kpiBonusPercent !== undefined ? systemSettings.kpiBonusPercent : 5;
+  const managementPercent = systemSettings?.managementCommissionPercent !== undefined ? systemSettings.managementCommissionPercent : 0;
   const [activeTab, setActiveTab] = useState<FinanceTab>('overview');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -333,9 +337,10 @@ export function FinanceManager({
       }
     });
 
-    // Thưởng KPI 5% doanh thu nếu doanh thu kênh > 0
-    const bonus = recordFormData.revenue > 0 ? recordFormData.revenue * 0.05 : 0;
-    calculatedExpenses += bonus;
+    // Thưởng KPI doanh thu và Hoa hồng quản lý
+    const bonus = recordFormData.revenue > 0 ? recordFormData.revenue * (kpiPercent / 100) : 0;
+    const commission = recordFormData.revenue > 0 ? recordFormData.revenue * (managementPercent / 100) : 0;
+    calculatedExpenses += bonus + commission;
 
     const roundedExpenses = Math.round(calculatedExpenses);
 
@@ -347,10 +352,10 @@ export function FinanceManager({
     }));
 
     if (managers.length === 0) {
-      showToast(`Không có nhân sự nào quản lý kênh này. Chi phí tính toán là 0 VNĐ (Thưởng KPI: ${Math.round(bonus).toLocaleString('vi-VN')} VNĐ).`, 'warning');
+      showToast(`Không có nhân sự nào quản lý kênh này. Chi phí hạch toán là ${roundedExpenses.toLocaleString('vi-VN')} VNĐ (Thưởng KPI ${kpiPercent}%: ${Math.round(bonus).toLocaleString('vi-VN')} VNĐ, Hoa hồng Admin ${managementPercent}%: ${Math.round(commission).toLocaleString('vi-VN')} VNĐ).`, 'warning');
     } else {
       showToast(
-        `Đã tự động tính lương phân bổ: ${roundedExpenses.toLocaleString('vi-VN')} VNĐ (Bao gồm lương phân bổ của ${managers.length} nhân sự và thưởng KPI 5% doanh thu: ${Math.round(bonus).toLocaleString('vi-VN')} VNĐ).`,
+        `Đã tính lương phân bổ: ${roundedExpenses.toLocaleString('vi-VN')} VNĐ (Gồm lương phân bổ của ${managers.length} nhân sự, thưởng KPI ${kpiPercent}%: ${Math.round(bonus).toLocaleString('vi-VN')} VNĐ và hoa hồng Admin ${managementPercent}%: ${Math.round(commission).toLocaleString('vi-VN')} VNĐ).`,
         'success'
       );
     }
@@ -473,7 +478,8 @@ export function FinanceManager({
               calculatedExpenses += staff.baseSalary / totalChannels;
             }
           });
-          calculatedExpenses += revenue * 0.05;
+          calculatedExpenses += revenue * (kpiPercent / 100);
+          calculatedExpenses += revenue * (managementPercent / 100);
           expenses = Math.round(calculatedExpenses);
         }
 
@@ -561,7 +567,8 @@ export function FinanceManager({
           calculatedExpenses += staff.baseSalary / totalChannels;
         }
       });
-      calculatedExpenses += revenue * 0.05;
+      calculatedExpenses += revenue * (kpiPercent / 100);
+      calculatedExpenses += revenue * (managementPercent / 100);
       const expenses = Math.round(calculatedExpenses);
 
       const netProfit = revenue - expenses;

@@ -383,6 +383,9 @@ export type SystemSettings = {
   zaloAccessToken?: string;
   zaloPhoneOrGroupId?: string;
   zaloEnabled?: boolean;
+  kpiBonusPercent?: number;
+  managementCommissionPercent?: number;
+  exchangeRate?: number;
 };
 
 export type AppealTemplate = {

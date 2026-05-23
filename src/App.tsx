@@ -633,6 +633,7 @@ function AppContent() {
                   staffList={staffList}
                   geminiApiKey={activeGeminiKey}
                   channelMetrics={channelMetrics}
+                  systemSettings={systemSettings}
                 />
               )}
               {activeTab === 'monetization_report' && (
@@ -644,6 +645,7 @@ function AppContent() {
                   currentStaff={currentStaff}
                   isAdmin={currentUser?.role === 'admin' || currentUser?.role === 'manager'}
                   staffList={staffList}
+                  systemSettings={systemSettings}
                 />
               )}
               {activeTab === 'appeal_templates' && (
