@@ -4,6 +4,10 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-05-23
+### 🐛 Sửa lỗi & Tối ưu hóa (Bug Fixes & Optimizations)
+- **Vá lỗi Lưu Kênh Nguồn Liên Kết:** Khắc phục triệt để lỗi `"Could not find the 'views' column of 'source_channels' in the schema cache"` khi cào và liên kết kênh nguồn mới vào kênh trong mạng lưới. Đồng bộ hóa toàn bộ tên cột gửi lên CSDL từ `views` sang `total_views` chuẩn theo cấu trúc của Supabase.
+
 ## [1.1.0] - 2026-05-22
 ### 🚀 Tính năng mới (Features)
 - **Tìm kiếm & Đồng bộ A-Z Chủ đề:** Tích hợp bộ chọn chủ đề hỗ trợ tìm kiếm được sắp xếp theo bảng chữ cái từ A-Z ở tab Kênh Nguồn và Mạng lưới Kênh. Loại bỏ ô "Tất cả nhóm CĐ" dư thừa và cải thiện kích thước hiển thị đồng bộ, to rộng cân đối với các ô còn lại.
