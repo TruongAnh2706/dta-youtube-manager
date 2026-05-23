@@ -6,7 +6,7 @@ Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
 ## [1.1.1] - 2026-05-23
 ### 🐛 Sửa lỗi & Tối ưu hóa (Bug Fixes & Optimizations)
-- **Vá lỗi Lưu Kênh Nguồn Liên Kết:** Khắc phục triệt để lỗi `"Could not find the 'views' column of 'source_channels' in the schema cache"` khi cào và liên kết kênh nguồn mới vào kênh trong mạng lưới. Đồng bộ hóa toàn bộ tên cột gửi lên CSDL từ `views` sang `total_views` chuẩn theo cấu trúc của Supabase.
+- **Vá lỗi Lưu Kênh Nguồn Liên Kết:** Khắc phục triệt để lỗi `"Could not find the 'views' column of 'source_channels' in the schema cache"` khi cào và liên kết kênh nguồn mới vào kênh trong mạng lưới. Đồng bộ hóa toàn bộ tên cột gửi lên CSDL từ `views` sang `total_views` chuẩn theo cấu trúc của Supabase. Bản vá đã được tối ưu hóa và kiểm thử build hoàn chỉnh để anh Đức Trường test vận hành thực tế.
 
 ## [1.1.0] - 2026-05-22
 ### 🚀 Tính năng mới (Features)
