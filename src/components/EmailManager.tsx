@@ -378,7 +378,17 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     const selectedData = emails.filter(em => selectedIds.includes(em.id));
     if (selectedData.length === 0) return;
 
-    const exportData = selectedData.map(em => {
+    // Sắp xếp tự nhiên (natural sort) theo Mã kênh tăng dần
+    const sortedSelectedData = [...selectedData].sort((a, b) => {
+      const codeA = a.channelCode || '';
+      const codeB = b.channelCode || '';
+      if (!codeA && !codeB) return a.email.localeCompare(b.email);
+      if (!codeA) return 1;
+      if (!codeB) return -1;
+      return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    const exportData = sortedSelectedData.map(em => {
       const statusObj = systemSettings?.emailStatuses?.find(s => s.id === em.status);
       const statusText = statusObj ? statusObj.label : em.status;
       const staffName = staffList.find(s => s.id === em.assignedTo)?.name || '';
@@ -412,7 +422,18 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
 
   const handleExportAll = () => {
     if (filteredEmails.length === 0) return;
-    const exportData = filteredEmails.map(em => {
+
+    // Sắp xếp tự nhiên (natural sort) theo Mã kênh tăng dần
+    const sortedExportData = [...filteredEmails].sort((a, b) => {
+      const codeA = a.channelCode || '';
+      const codeB = b.channelCode || '';
+      if (!codeA && !codeB) return a.email.localeCompare(b.email);
+      if (!codeA) return 1;
+      if (!codeB) return -1;
+      return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    const exportData = sortedExportData.map(em => {
       const statusObj = systemSettings?.emailStatuses?.find(s => s.id === em.status);
       const statusText = statusObj ? statusObj.label : em.status;
       const staffName = staffList.find(s => s.id === em.assignedTo)?.name || '';
