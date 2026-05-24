@@ -733,6 +733,25 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     return matchesSearch && matchesStatus && matchesStaff && isAllowed;
   });
 
+  const sortedEmails = React.useMemo(() => {
+    return [...filteredEmails].sort((a, b) => {
+      const codeA = a.channelCode || '';
+      const codeB = b.channelCode || '';
+      
+      // Nếu cả hai đều không có mã kênh, xếp theo email
+      if (!codeA && !codeB) {
+        return a.email.localeCompare(b.email);
+      }
+      
+      // Email nào không có mã kênh thì đẩy xuống dưới cùng
+      if (!codeA) return 1;
+      if (!codeB) return -1;
+      
+      // Sắp xếp tự nhiên (natural sort) để TC86 đứng trước TC106
+      return codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [filteredEmails]);
+
   const getStatusBadge = (status: string) => {
     const s = systemSettings?.emailStatuses?.find(st => st.id === status);
     if (!s) return <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded-full text-xs font-medium border border-gray-200">{status}</span>;
@@ -840,9 +859,9 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                   <th className="p-3 font-medium w-10">
                     <input 
                       type="checkbox" 
-                      checked={filteredEmails.length > 0 && selectedIds.length === filteredEmails.length}
+                      checked={sortedEmails.length > 0 && selectedIds.length === sortedEmails.length}
                       onChange={(e) => {
-                        if (e.target.checked) setSelectedIds(filteredEmails.map(c => c.id));
+                        if (e.target.checked) setSelectedIds(sortedEmails.map(c => c.id));
                         else setSelectedIds([]);
                       }}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -860,7 +879,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm">
-              {filteredEmails.map(email => {
+              {sortedEmails.map(email => {
                 const staff = staffList.find(s => s.id === email.assignedTo);
                 const isPasswordVisible = showPasswords[email.id];
 
@@ -969,7 +988,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
                   </tr>
                 );
               })}
-              {filteredEmails.length === 0 && (
+              {sortedEmails.length === 0 && (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-gray-500">
                     Chưa có email nào trong danh sách.

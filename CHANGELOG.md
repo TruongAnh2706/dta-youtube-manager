@@ -4,6 +4,10 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.3] - 2026-05-24
+### 🚀 Tính năng mới (Features)
+- **Sắp xếp Mã Kênh Tự nhiên (Natural Sort):** Sắp xếp danh sách tài khoản email thô tăng dần theo Mã Kênh một cách trực quan và khoa học (ví dụ: `TC01` ➔ `TC38` ➔ `TC49` ➔ `TC80` ➔ `TC86` ➔ `TC96` ➔ `TC106` ➔ `TC116`...). Các email chưa được cấp Mã kênh sẽ tự động được đẩy xuống cuối danh sách để nhường vị trí ưu tiên cho các kênh đã định danh.
+
 ## [1.2.2] - 2026-05-24
 ### 🚀 Tính năng mới (Features)
 - **Xuất Excel Đầy đủ Thông tin Email:** Cải tiến tính năng Xuất Excel trong danh sách Quản lý Email (tài khoản thô).
