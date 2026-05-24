@@ -381,13 +381,19 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     const exportData = selectedData.map(em => {
       const statusObj = systemSettings?.emailStatuses?.find(s => s.id === em.status);
       const statusText = statusObj ? statusObj.label : em.status;
-
+      const staffName = staffList.find(s => s.id === em.assignedTo)?.name || '';
+      const linkedChannel = channels?.find(c => c.email?.toLowerCase() === em.email.toLowerCase());
       const topicNames = em.targetTopicIds?.map(tid => topics.find(t => t.id === tid)?.name).filter(Boolean).join(', ') || '';
 
-      // P1.3: Không export password/2FA ra Excel
       return {
         'Mã Kênh': em.channelCode || '',
         'Email': em.email || '',
+        'Mật khẩu': em.password || '',
+        'Email Khôi Phục': em.recoveryEmail || '',
+        '2FA': em.twoFactorAuth || '',
+        'SĐT Xác minh': em.verificationPhone || '',
+        'Kênh liên kết': linkedChannel?.name || '',
+        'Nhân sự': staffName,
         'Trạng thái': statusText,
         'Ghi chú': em.notes || '',
         'Chủ đề dự kiến': topicNames
@@ -411,13 +417,20 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
       const statusText = statusObj ? statusObj.label : em.status;
       const staffName = staffList.find(s => s.id === em.assignedTo)?.name || '';
       const linkedChannel = channels?.find(c => c.email?.toLowerCase() === em.email.toLowerCase());
+      const topicNames = em.targetTopicIds?.map(tid => topics.find(t => t.id === tid)?.name).filter(Boolean).join(', ') || '';
+
       return {
         'Mã Kênh': em.channelCode || '',
-        'Email': em.email,
+        'Email': em.email || '',
+        'Mật khẩu': em.password || '',
+        'Email Khôi Phục': em.recoveryEmail || '',
+        '2FA': em.twoFactorAuth || '',
+        'SĐT Xác minh': em.verificationPhone || '',
         'Kênh liên kết': linkedChannel?.name || '',
         'Nhân sự': staffName,
         'Trạng thái': statusText,
-        'Ghi chú': em.notes || ''
+        'Ghi chú': em.notes || '',
+        'Chủ đề dự kiến': topicNames
       };
     });
     const ws = XLSX.utils.json_to_sheet(exportData);

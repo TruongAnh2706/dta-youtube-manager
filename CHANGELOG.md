@@ -4,6 +4,12 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.2] - 2026-05-24
+### 🚀 Tính năng mới (Features)
+- **Xuất Excel Đầy đủ Thông tin Email:** Cải tiến tính năng Xuất Excel trong danh sách Quản lý Email (tài khoản thô).
+  - Đối với xuất danh sách mail đã chọn (`handleBulkExport`) và xuất toàn bộ danh sách lọc được (`handleExportAll`), dữ liệu xuất ra giờ đây sẽ có đầy đủ thông tin nhất bao gồm: **Mã Kênh, Email, Mật khẩu, Email Khôi Phục, 2FA, SĐT Xác minh, Kênh liên kết, Nhân sự, Trạng thái, Ghi chú, Chủ đề dự kiến** (Đầy đủ 11 cột quan trọng để quản lý tiện lợi nhất).
+  - Khôi phục tính năng xuất bảo mật Mật khẩu và 2FA cho quản trị viên/chủ sở hữu (Đức Trường) phục vụ cho nhu cầu lưu trữ và phục hồi tài khoản khi cần thiết.
+
 ## [1.2.1] - 2026-05-23
 ### 🚀 Tính năng mới (Features)
 - **Cấu hình Tỷ giá Quy đổi USD/VND động:** Bổ sung ô nhập **"Tỷ giá quy đổi (USD/VND)"** trong phần Cài đặt Tài chính (Admin Settings). Admin có thể chủ động cập nhật tỷ giá sát thực tế thay vì fix cứng `25.400 đ/USD` trong code. Tỷ giá mới được áp dụng toàn hệ thống cho tháng hiện tại (số liệu hàng ngày không thay đổi, chỉ tổng kênh và báo cáo tài chính P&L).
