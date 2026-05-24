@@ -4,6 +4,10 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.5] - 2026-05-24
+### 🚀 Tính năng mới (Features)
+- **Dịch Lỗi Kết nối Hệ thống (Failed to Fetch):** Nâng cấp bộ bắt lỗi trong chức năng quét trạng thái kiếm tiền của kênh đối thủ (`SourceChannels`). Tự động phát hiện lỗi ngắt kết nối mạng/chưa bật backend `Failed to fetch` và hiển thị thông báo tiếng Việt trực quan, hướng dẫn cụ thể cách khởi động Server Node.js (cổng 3001) để quản trị viên dễ dàng tự xử lý.
+
 ## [1.2.4] - 2026-05-24
 ### 🚀 Tính năng mới (Features)
 - **Đồng bộ Sắp xếp Excel:** Cập nhật đồng bộ thuật toán Sắp xếp tự nhiên Mã kênh tăng dần vào cả chức năng Xuất Excel đã chọn và Xuất Excel tất cả, đảm bảo file Excel tải xuống khớp thứ tự 100% so với giao diện quản trị.

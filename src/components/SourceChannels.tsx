@@ -104,7 +104,11 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
 
     } catch (err: any) {
       console.error('[CHECK MONETIZATION ERROR]', err);
-      showToast(err.message || 'Lỗi hệ thống khi kiểm tra trạng thái kiếm tiền.', 'error');
+      let errMsg = err.message || '';
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('fetch')) {
+        errMsg = '🌐 Lỗi kết nối: Không thể kết nối tới máy chủ Backend (Cổng 3001). Vui lòng kiểm tra xem bạn đã khởi động Server Node.js chưa (chạy lệnh "npm run dev").';
+      }
+      showToast(errMsg || 'Lỗi hệ thống khi kiểm tra trạng thái kiếm tiền.', 'error');
     } finally {
       setCheckingMonetizationIds(prev => prev.filter(id => id !== channel.id));
     }
