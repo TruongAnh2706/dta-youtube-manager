@@ -638,6 +638,39 @@ app.post('/api/youtube/check-monetization', verifyAuth, async (req, res) => {
 });
 
 /**
+ * POST /api/youtube/scan-all-monetization
+ * Kích hoạt tác vụ quét ngầm BKT hàng loạt bất đồng bộ (chỉ dành cho Admin)
+ */
+app.post('/api/youtube/scan-all-monetization', verifyAuth, async (req, res) => {
+    try {
+        // Kiểm tra quyền Admin
+        const { data: staff, error } = await supabase
+            .from('staff_list')
+            .select('role')
+            .eq('id', req.authUser.id)
+            .single();
+
+        if (error || !staff || staff.role !== 'admin') {
+            return res.status(403).json({ error: 'Chỉ có tài khoản Admin mới có quyền kích hoạt quét hàng loạt BKT.' });
+        }
+
+        // Phản hồi lập tức để tránh timeout trình duyệt
+        res.status(202).json({
+            success: true,
+            message: 'Đã kích hoạt tác vụ quét trạng thái BKT chạy ngầm trên máy chủ DTA Studio. Tiến trình đang chạy ẩn dưới nền.'
+        });
+
+        // Kích hoạt tiến trình quét ngầm chạy bất đồng bộ
+        scanAllMonetization(true).then();
+
+    } catch (err) {
+        console.error('[SCAN ALL ERROR]', err);
+        res.status(500).json({ error: 'Lỗi khi kích hoạt quét ngầm BKT hàng loạt.' });
+    }
+});
+
+
+/**
  * POST /api/ai/analyze-topic
  * Body: { channelName, description, topics }
  * Server gọi Gemini API
@@ -870,21 +903,215 @@ async function fetchChannelInfo(url, apiKey, skipTopVideos = false) {
     return result;
 }
 
+
+/**
+ * Hàm chạy ẩn quét toàn bộ kênh chính và đối thủ để cập nhật trạng thái BKT
+ */
+async function scanAllMonetization(manualTrigger = false) {
+    console.log('[DTA AUTOMONETIZE] Bắt đầu quét tự động trạng thái BKT toàn bộ kênh...');
+    let successCount = 0;
+    let failedCount = 0;
+    const logDetails = [];
+
+    try {
+        // 1. Lấy tất cả kênh chính từ Supabase
+        const { data: channels, error: channelsError } = await supabase
+            .from('channels')
+            .select('id, name, url, is_monetized');
+
+        // 2. Lấy tất cả kênh đối thủ từ Supabase
+        const { data: sourceChannels, error: sourceError } = await supabase
+            .from('source_channels')
+            .select('id, name, url, is_monetized');
+
+        if (channelsError) console.error('[MONETIZATION SCAN] Lỗi lấy kênh chính:', channelsError);
+        if (sourceError) console.error('[MONETIZATION SCAN] Lỗi lấy kênh đối thủ:', sourceError);
+
+        const allChannels = [];
+        if (channels) {
+            channels.forEach(c => allChannels.push({ ...c, type: 'channels' }));
+        }
+        if (sourceChannels) {
+            sourceChannels.forEach(c => allChannels.push({ ...c, type: 'source_channels' }));
+        }
+
+        console.log(`[MONETIZATION SCAN] Tìm thấy tổng cộng ${allChannels.length} kênh cần quét.`);
+        logDetails.push(`Bắt đầu quét lúc: ${new Date().toLocaleString('vi-VN')}`);
+        logDetails.push(`Tổng số kênh phát hiện: ${allChannels.length}`);
+
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        // 3. Quét từng kênh tuần tự kèm delay để bảo vệ IP khỏi Rate Limit
+        for (let i = 0; i < allChannels.length; i++) {
+            const channel = allChannels[i];
+            console.log(`[MONETIZATION SCAN] (${i+1}/${allChannels.length}) Đang quét: ${channel.name} (${channel.type})`);
+            
+            try {
+                // Giãn cách 5 giây để tránh bị YouTube nghi ngờ robot và chặn IP
+                if (i > 0) await sleep(5000);
+
+                let targetVideoId = null;
+                const channelUrl = channel.url || (channel.type === 'channels' ? `https://www.youtube.com/channel/${channel.id}` : null);
+                
+                if (!channelUrl) {
+                    throw new Error('Thiếu URL kênh.');
+                }
+
+                // Cào trang chủ kênh để tìm videoId mới nhất
+                const channelResponse = await fetch(channelUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+
+                if (!channelResponse.ok) {
+                    throw new Error(`Truy cập kênh thất bại (HTTP ${channelResponse.status})`);
+                }
+
+                const channelHtml = await channelResponse.text();
+
+                if (channelHtml.includes('sorry/index') || channelHtml.includes('consent.youtube.com')) {
+                    throw new Error('Bị chặn Rate Limit (sorry/index hoặc consent).');
+                }
+
+                const videoIdMatch = channelHtml.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+                if (videoIdMatch) {
+                    targetVideoId = videoIdMatch[1];
+                } else {
+                    const watchMatch = channelHtml.match(/\/watch\?v=([a-zA-Z0-9_-]{11})/);
+                    if (watchMatch) {
+                        targetVideoId = watchMatch[1];
+                    }
+                }
+
+                if (!targetVideoId) {
+                    throw new Error('Không tìm thấy video công khai nào để kiểm tra.');
+                }
+
+                // Cào trang video cụ thể để trích xuất flags kiếm tiền
+                const videoResponse = await fetch(`https://www.youtube.com/watch?v=${targetVideoId}`, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+                        'Cache-Control': 'no-cache'
+                    }
+                });
+
+                if (!videoResponse.ok) {
+                    throw new Error(`Truy cập video thất bại (HTTP ${videoResponse.status})`);
+                }
+
+                const videoHtml = await videoResponse.text();
+
+                if (videoHtml.includes('sorry/index') || videoHtml.includes('consent.youtube.com')) {
+                    throw new Error('Bị chặn Rate Limit khi cào trang video.');
+                }
+
+                const isMonetized = videoHtml.includes('"is_monetization_enabled":true') || 
+                                    videoHtml.includes('"key":"is_monetization_enabled","value":"true"') ||
+                                    videoHtml.includes('is_monetization_enabled=true');
+                                    
+                const isNotMonetized = videoHtml.includes('"is_monetization_enabled":false') || 
+                                       videoHtml.includes('"key":"is_monetization_enabled","value":"false"') ||
+                                       videoHtml.includes('is_monetization_enabled=false');
+
+                let finalStatus = null;
+                if (isMonetized) {
+                    finalStatus = true;
+                } else if (isNotMonetized) {
+                    finalStatus = false;
+                } else {
+                    const hasAdSignals = videoHtml.includes('yt_ad_signals') || videoHtml.includes('adPlacements');
+                    if (hasAdSignals) {
+                        finalStatus = true;
+                    }
+                }
+
+                if (finalStatus === null) {
+                    throw new Error('Không phát hiện được flag kiếm tiền trong HTML của YouTube.');
+                }
+
+                // Lưu lại CSDL Supabase
+                if (channel.type === 'channels') {
+                    await supabase
+                        .from('channels')
+                        .update({
+                            is_monetized: finalStatus,
+                            monetization_date: finalStatus ? new Date().toISOString() : null,
+                            last_health_check: new Date().toISOString()
+                        })
+                        .eq('id', channel.id);
+                } else {
+                    await supabase
+                        .from('source_channels')
+                        .update({
+                            is_monetized: finalStatus,
+                            last_health_check: new Date().toISOString()
+                        })
+                        .eq('id', channel.id);
+                }
+
+                successCount++;
+                logDetails.push(`✅ Kênh: ${channel.name} -> ${finalStatus ? 'BẬT KIẾM TIỀN' : 'TẮT KIẾM TIỀN'}`);
+                console.log(`[DTA AUTOMONETIZE] Thành công: ${channel.name} -> ${finalStatus ? 'BKT' : 'Tắt BKT'}`);
+
+            } catch (channelErr) {
+                failedCount++;
+                logDetails.push(`❌ Kênh: ${channel.name} -> Lỗi: ${channelErr.message}`);
+                console.error(`[DTA AUTOMONETIZE] Lỗi kênh ${channel.name}:`, channelErr.message);
+            }
+        }
+
+        logDetails.push(`Hoàn tất lúc: ${new Date().toLocaleString('vi-VN')}`);
+        logDetails.push(`Kết quả quét: Thành công ${successCount} kênh, Thất bại ${failedCount} kênh.`);
+
+        // 4. Ghi Audit Log vào system_settings
+        const { data: settings } = await supabase
+            .from('system_settings')
+            .select('audit_logs')
+            .eq('id', 'SYSTEM_DEFAULT_ID')
+            .single();
+
+        const auditLogs = settings?.audit_logs || [];
+        const newLog = {
+            id: Math.random().toString(36).substr(2, 9) + '-' + Date.now(),
+            timestamp: new Date().toISOString(),
+            action: 'auto_monetization_scan',
+            actor: manualTrigger ? 'Đức Trường (Kích hoạt thủ công)' : 'Hệ thống DTA AutoMonetize (Auto)',
+            details: `Đã quét xong. Thành công: ${successCount}, Thất bại: ${failedCount}`,
+            raw_details: logDetails
+        };
+
+        const updatedLogs = [newLog, ...auditLogs].slice(0, 100);
+
+        await supabase
+            .from('system_settings')
+            .update({ audit_logs: updatedLogs, updated_at: new Date().toISOString() })
+            .eq('id', 'SYSTEM_DEFAULT_ID');
+
+        console.log('[DTA AUTOMONETIZE] Cập nhật Audit Log thành công.');
+
+    } catch (globalErr) {
+        console.error('[DTA AUTOMONETIZE] Lỗi quét ngầm:', globalErr);
+    }
+}
+
 // ========================================
 // BACKGROUND JOBS (CRON)
 // ========================================
-// Chạy mỗi 6 tiếng để cập nhật giả lập trạng thái kênh (ví dụ)
-cron.schedule('0 */6 * * *', async () => {
-    console.log('[CRON] Đang chạy tác vụ cập nhật sức khỏe kênh ngầm...');
+// Tác vụ DTA AutoMonetize quét tự động toàn bộ trạng thái kênh BKT lúc 2:00 sáng hàng ngày
+cron.schedule('0 2 * * *', async () => {
+    console.log('[CRON] Khởi động tác vụ quét ngầm tự động DTA AutoMonetize hàng ngày...');
     try {
-        // Ví dụ: Tìm các kênh source đã lâu chưa update (hơn 1 ngày)
-        // và tự động update hoặc gửi log.
-        // Đây là nơi sẽ gọi các hàm crawl dữ liệu tự động.
-        console.log('[CRON] Tác vụ hoàn tất thành công.');
+        await scanAllMonetization(false);
+        console.log('[CRON] Tác vụ DTA AutoMonetize hoàn tất thành công.');
     } catch (err) {
-        console.error('[CRON] Lỗi khi chạy tác vụ ngầm:', err);
+        console.error('[CRON] Lỗi khi chạy tác vụ ngầm DTA AutoMonetize:', err);
     }
 });
+
 
 // Start server
 app.listen(PORT, () => {

@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Channel, ChannelMetric, Staff, SystemSettings } from '../types';
 import { useToast } from '../hooks/useToast';
-import { Calendar, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Edit3, X, Eye, Lock, ChevronRight, ChevronDown, ChevronUp, Users, User, Percent, BarChart3 } from 'lucide-react';
+import { Calendar, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Edit3, X, Eye, Lock, ChevronRight, ChevronDown, ChevronUp, Users, User, Percent, BarChart3, Sparkles, RefreshCw, Activity } from 'lucide-react';
 import { format, subDays, isAfter, isBefore, isSameDay, startOfMonth, endOfMonth, eachDayOfInterval, getDaysInMonth, parseISO } from 'date-fns';
 import { vi } from 'date-fns/locale';
 
@@ -58,6 +58,59 @@ export function MonetizationReport({ channels, setChannels, metrics, setMetrics,
   const [currentExchangeRate, setCurrentExchangeRate] = useState(25400); // Tỉ giá mặc định
   const [adminViewMode, setAdminViewMode] = useState<'summary' | 'detail'>('summary');
   const [expandedStaffIds, setExpandedStaffIds] = useState<string[]>([]);
+
+  // State và Logic của DTA AutoMonetize quét ngầm tự động
+  const [isScanningAll, setIsScanningAll] = useState(false);
+
+  const lastScanLog = useMemo(() => {
+    if (!systemSettings?.auditLogs || !Array.isArray(systemSettings.auditLogs)) return null;
+    return systemSettings.auditLogs.find((log: any) => log.action === 'auto_monetization_scan');
+  }, [systemSettings]);
+
+  const handleScanAllMonetization = async () => {
+    if (isScanningAll) return;
+    setIsScanningAll(true);
+    showToast('🚀 Đang gửi yêu cầu quét tự động BKT hàng loạt lên máy chủ...', 'info');
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      
+      if (!token) {
+        showToast('Không tìm thấy phiên đăng nhập. Vui lòng đăng nhập lại.', 'error');
+        return;
+      }
+
+      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+      const response = await fetch(`${API_BASE_URL}/api/youtube/scan-all-monetization`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Yêu cầu kích hoạt quét thất bại.');
+      }
+
+      showToast(`⚡ ${result.message}`, 'success', 8000);
+      
+    } catch (err: any) {
+      console.error('[SCAN ALL ERROR]', err);
+      let errMsg = err.message || '';
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('fetch')) {
+        errMsg = '🌐 Lỗi kết nối: Không thể kết nối tới máy chủ Backend (Cổng 3001). Vui lòng kiểm tra xem bạn đã khởi động Server Node.js ngầm chưa (chạy file "cai-dat-khoi-dong.bat" 1 lần để kích hoạt chạy ngầm).';
+      }
+      showToast(errMsg, 'error');
+    } finally {
+      setIsScanningAll(false);
+    }
+  };
+
 
   // Lấy tỷ giá
   useEffect(() => {
@@ -414,6 +467,80 @@ export function MonetizationReport({ channels, setChannels, metrics, setMetrics,
         {/* Chế độ Xem Tổng Hợp Admin */}
         {isAdmin && adminViewMode === 'summary' ? (
           <div className="space-y-6">
+            {/* DTA AUTOMONETIZE CONTROL PANEL - Phong cách tối giản, High-tech, Premium Dark Mode */}
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden text-slate-100 flex flex-col md:flex-row items-center justify-between gap-6 transition-all duration-300">
+              {/* Hiệu ứng nền phát sáng Neon */}
+              <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none animate-pulse"></div>
+              <div className="absolute bottom-0 left-0 w-80 h-80 bg-rose-500/5 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none"></div>
+
+              <div className="flex-1 space-y-4 relative z-10">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2.5 bg-slate-900 border border-slate-750 text-cyan-400 rounded-xl shadow-lg">
+                    <Activity size={20} className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black tracking-tight text-white flex items-center bg-gradient-to-r from-cyan-400 to-indigo-400 bg-clip-text text-transparent uppercase">
+                      DTA AutoMonetize Control Panel
+                      <span className="ml-2.5 inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black bg-cyan-955 text-cyan-400 border border-cyan-800/40 shadow-inner tracking-wider">
+                        ALWAYS ON
+                      </span>
+                    </h2>
+                    <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
+                      Giám sát quét kiếm tiền tự động • Phát triển bởi DTA Studio
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                  <div className="p-3.5 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1 hover:border-slate-750 transition-colors">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Trạng thái tự động</span>
+                    <div className="flex items-center space-x-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping shrink-0" style={{ boxShadow: '0 0 8px #00FFFF' }}></span>
+                      <span className="text-xs font-extrabold text-cyan-300">Đang bật (02:00 sáng hàng ngày)</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3.5 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1 hover:border-slate-750 transition-colors">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Quét ngầm gần nhất</span>
+                    <span className="text-xs font-extrabold text-white block">
+                      {lastScanLog ? format(new Date(lastScanLog.timestamp), 'dd/MM/yyyy HH:mm:ss') : 'Chưa có dữ liệu quét'}
+                    </span>
+                  </div>
+                </div>
+
+                {lastScanLog && (
+                  <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between text-[11px] text-slate-400 hover:border-slate-750 transition-colors">
+                    <div className="flex items-center space-x-2">
+                      <Sparkles size={12} className="text-amber-400 shrink-0" />
+                      <span className="font-semibold">{lastScanLog.details}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-extrabold bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0 select-none">
+                      {lastScanLog.userName || 'System'}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="shrink-0 relative z-10 w-full md:w-auto flex flex-col items-center">
+                <button
+                  onClick={handleScanAllMonetization}
+                  disabled={isScanningAll}
+                  className={`w-full md:w-auto px-6 py-4 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center space-x-2.5 transition-all duration-300 transform active:scale-95 shadow-lg border ${
+                    isScanningAll
+                      ? 'bg-slate-900 border-slate-800 text-slate-500 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white border-cyan-400/30 hover:border-cyan-400/50 hover:shadow-cyan-500/20 active:from-cyan-600'
+                  }`}
+                  style={!isScanningAll ? { boxShadow: '0 4px 20px rgba(0, 255, 255, 0.15)' } : {}}
+                >
+                  <RefreshCw size={16} className={`${isScanningAll ? 'animate-spin' : ''}`} />
+                  <span>{isScanningAll ? 'Đang kích hoạt...' : 'DTA Auto Scan BKT'}</span>
+                </button>
+                <span className="text-[10px] text-slate-500 font-medium mt-2 select-none">
+                  * Kích hoạt quét ngầm toàn bộ kênh hệ thống và đối thủ
+                </span>
+              </div>
+            </div>
+
             {/* Section 1: Thẻ KPI phong cách phẳng siêu sang trọng */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* KPI 1: Tổng kênh BKT */}
