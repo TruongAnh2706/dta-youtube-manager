@@ -216,25 +216,51 @@ export function MonetizationReport({ channels, setChannels, metrics, setMetrics,
 
       const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-      const response = await fetch(`${API_BASE_URL}/api/youtube/check-monetization`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          channelUrl: channel.url || `https://www.youtube.com/channel/${channel.id}`,
-          videoId: null
-        })
-      });
+      let isMonetized = null;
+      let callSuccess = false;
 
-      const result = await response.json();
+      // 2. Thử gọi qua Supabase Edge Function (Cloud)
+      try {
+        const { data: edgeData, error: edgeError } = await supabase.functions.invoke('check-monetization', {
+          body: {
+            channelUrl: channel.url || `https://www.youtube.com/channel/${channel.id}`,
+            videoId: null
+          }
+        });
 
-      if (!response.ok || !result.success) {
-        throw new Error(result.error || 'Cào dữ liệu kiếm tiền từ YouTube thất bại.');
+        if (!edgeError && edgeData && edgeData.success) {
+          isMonetized = edgeData.isMonetized;
+          callSuccess = true;
+          console.log('[MONETIZATION] Quét thành công qua Supabase Edge Function Cloud!');
+        } else if (edgeError) {
+          console.warn('[MONETIZATION] Supabase Edge Function trả về lỗi:', edgeError);
+        }
+      } catch (edgeErr) {
+        console.warn('[MONETIZATION] Không thể kết nối Cloud Edge Function, tự động chuyển về Express local...', edgeErr);
       }
 
-      const isMonetized = result.isMonetized;
+      // Fallback về Backend local Express nếu gọi Edge Function thất bại
+      if (!callSuccess) {
+        const response = await fetch(`${API_BASE_URL}/api/youtube/check-monetization`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            channelUrl: channel.url || `https://www.youtube.com/channel/${channel.id}`,
+            videoId: null
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || 'Cào dữ liệu kiếm tiền từ YouTube thất bại.');
+        }
+
+        isMonetized = result.isMonetized;
+      }
 
       const { error: dbError } = await supabase
         .from('channels')

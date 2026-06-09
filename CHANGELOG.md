@@ -4,6 +4,13 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.7] - 2026-06-09
+### 🚀 Tính năng mới (Features)
+- **Kiểm tra Kiếm tiền qua Cloud (Supabase Edge Function):** Di chuyển logic check BKT YouTube từ server local Express sang chạy trực tuyến 24/7 trên Cloud của Supabase qua Edge Function `check-monetization`. Giúp admin và nhân viên mở Web App ra là có thể quét BKT ngay lập tức mà không cần bật server local ở máy cá nhân.
+- **Cơ chế Fallback local tự động:** Triển khai cơ chế dự phòng thông minh ở Frontend (React). Nếu gọi Cloud Function thất bại, hệ thống tự động gọi về server local cổng 3001, đảm bảo tính liên tục của hệ thống.
+- **Công cụ Deploy Supabase Edge Function tự động:** Cung cấp tệp `deploy-supabase-fn.bat` tự động hóa cài đặt Supabase CLI cục bộ và deploy lên Cloud của dự án.
+- **Sửa lỗi biên dịch (Compile Fix):** Khắc phục lỗi thiếu import `SystemSettings` trong `FinanceManager.tsx` làm gián đoạn quá trình deploy tự động lên GitHub Pages.
+
 ## [1.2.6] - 2026-06-09
 ### 🚀 Tính năng mới (Features)
 - **Hỗ trợ Tài khoản AI & Content:** Bổ sung loại tài sản mới (ChatGPT, ElevenLabs, Grok, Canva,...) trực tiếp vào Kho tài nguyên với giao diện màu Neon Blue và Neon Red đặc trưng của DTA Studio. Hỗ trợ nút copy nhanh và ẩn/hiện mật khẩu bảo mật.
