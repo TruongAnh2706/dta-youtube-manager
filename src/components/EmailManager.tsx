@@ -9,7 +9,7 @@ import { saveAs } from 'file-saver';
 import { ManagedEmail, Staff, Topic, VideoTask, Channel } from '../types';
 import { usePermissions } from '../hooks/usePermissions';
 import { useToast } from '../hooks/useToast';
-import { supabase } from '../lib/supabase';
+import { supabase, toSnakeCase } from '../lib/supabase';
 import { generateTOTP, isValid2FASecret } from '../services/totp';
 
 interface EmailManagerProps {
@@ -260,15 +260,23 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     showToast(`Đã sao chép ${type}`, 'info');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.email) return;
 
     if (editingEmail) {
       const isNewlyAssigned = formData.assignedTo && formData.assignedTo !== editingEmail.assignedTo;
+      const updatedEmail: ManagedEmail = { ...editingEmail, ...formData, assignedTo: formData.assignedTo || null };
       
-      setEmails(prev => prev.map(em => em.id === editingEmail.id ? { ...em, ...formData, assignedTo: formData.assignedTo || null } as ManagedEmail : em));
+      setEmails(prev => prev.map(em => em.id === editingEmail.id ? updatedEmail : em));
       
+      const dbPayload = toSnakeCase(updatedEmail);
+      const { error } = await supabase.from('managed_emails').upsert(dbPayload, { onConflict: 'id' });
+      if (error) {
+        showToast(`Lỗi lưu CSDL: ${error.message}`, 'error');
+        return;
+      }
+
       if (isNewlyAssigned) {
         const newTask: VideoTask = {
           id: crypto.randomUUID(),
@@ -283,6 +291,8 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
           isClaimable: false
         };
         setTasks(prev => [...prev, newTask]);
+        const taskPayload = toSnakeCase(newTask);
+        await supabase.from('video_tasks').upsert(taskPayload, { onConflict: 'id' });
       }
       
       showToast('Cập nhật email thành công', 'success');
@@ -301,6 +311,13 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
       };
       setEmails(prev => [newEmail, ...prev]);
 
+      const dbPayload = toSnakeCase(newEmail);
+      const { error } = await supabase.from('managed_emails').upsert(dbPayload, { onConflict: 'id' });
+      if (error) {
+        showToast(`Lỗi lưu CSDL: ${error.message}`, 'error');
+        return;
+      }
+
       if (formData.assignedTo) {
         const newTask: VideoTask = {
           id: crypto.randomUUID(),
@@ -315,6 +332,8 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
           isClaimable: false
         };
         setTasks(prev => [...prev, newTask]);
+        const taskPayload = toSnakeCase(newTask);
+        await supabase.from('video_tasks').upsert(taskPayload, { onConflict: 'id' });
       }
 
       showToast('Thêm email thành công', 'success');
@@ -341,13 +360,22 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     }
   };
 
-  const handleBulkStatusChange = (newStatus: string) => {
-    setEmails(prev => prev.map(em => selectedIds.includes(em.id) ? { ...em, status: newStatus } : em));
-    showToast(`Đã cập nhật trạng thái ${selectedIds.length} email`, 'success');
+  const handleBulkStatusChange = async (newStatus: string) => {
+    const updatedEmails = emails.map(em => selectedIds.includes(em.id) ? { ...em, status: newStatus } : em);
+    setEmails(updatedEmails);
+    
+    const targets = updatedEmails.filter(em => selectedIds.includes(em.id));
+    const dbPayloads = toSnakeCase(targets);
+    const { error } = await supabase.from('managed_emails').upsert(dbPayloads, { onConflict: 'id' });
+    if (error) {
+      showToast(`Lỗi lưu CSDL: ${error.message}`, 'error');
+    } else {
+      showToast(`Đã cập nhật trạng thái ${selectedIds.length} email`, 'success');
+    }
     setSelectedIds([]);
   };
 
-  const handleBulkAssign = (staffId: string) => {
+  const handleBulkAssign = async (staffId: string) => {
     const assignedEmails = emails.filter(em => selectedIds.includes(em.id));
     const finalStaffId = staffId === '' ? null : staffId;
     
@@ -365,9 +393,24 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
       isClaimable: false
     })) : [];
 
-    setEmails(prev => prev.map(em => selectedIds.includes(em.id) ? { ...em, assignedTo: finalStaffId } : em));
+    const updatedEmails = emails.map(em => selectedIds.includes(em.id) ? { ...em, assignedTo: finalStaffId } : em);
+    setEmails(updatedEmails);
+    
     if (newTasks.length > 0) {
       setTasks(prev => [...prev, ...newTasks]);
+    }
+    
+    const targets = updatedEmails.filter(em => selectedIds.includes(em.id));
+    const dbPayloads = toSnakeCase(targets);
+    const { error } = await supabase.from('managed_emails').upsert(dbPayloads, { onConflict: 'id' });
+    if (error) {
+      showToast(`Lỗi lưu CSDL: ${error.message}`, 'error');
+      return;
+    }
+
+    if (newTasks.length > 0) {
+      const taskPayloads = toSnakeCase(newTasks);
+      await supabase.from('video_tasks').upsert(taskPayloads, { onConflict: 'id' });
     }
     
     showToast(`Đã giao ${selectedIds.length} email và tạo task cho nhân sự`, 'success');
@@ -660,7 +703,7 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
     reader.readAsBinaryString(file);
   };
 
-  const handlePasteImport = () => {
+  const handlePasteImport = async () => {
     if (!pasteText.trim()) {
       showToast('Vui lòng nhập nội dung dữ liệu', 'error');
       return;
@@ -717,6 +760,14 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
 
     if (newEmails.length > 0) {
       setEmails(prev => [...newEmails, ...prev]);
+      
+      const dbPayloads = toSnakeCase(newEmails);
+      const { error } = await supabase.from('managed_emails').upsert(dbPayloads, { onConflict: 'id' });
+      if (error) {
+        showToast(`Lỗi lưu CSDL: ${error.message}`, 'error');
+        return;
+      }
+      
       showToast(`Đã thêm thành công ${addedCount} email. Bỏ qua ${skipCount} trùng lặp.`, 'success');
       setPasteText('');
       setIsPasteModalOpen(false);

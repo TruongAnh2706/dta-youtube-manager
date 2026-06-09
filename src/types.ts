@@ -269,7 +269,7 @@ export type Strike = {
   errorType?: string;
 };
 
-export type AssetType = 'drive' | 'stock_video' | 'audio' | 'template' | 'font' | 'footage' | 'license';
+export type AssetType = 'drive' | 'stock_video' | 'audio' | 'template' | 'font' | 'footage' | 'license' | 'ai_account' | 'content_account';
 
 export type Asset = {
   id: string;
@@ -278,6 +278,8 @@ export type Asset = {
   url: string;
   notes: string;
   expirationDate?: string;
+  username?: string;
+  password?: string;
 };
 
 export type Proxy = {

@@ -4,7 +4,7 @@ import { Plus, Edit2, Trash2, X, HardDrive, Video, Music, LayoutTemplate, Globe,
 import { GoogleGenAI } from '@google/genai';
 import { useToast } from '../hooks/useToast';
 import { usePermissions } from '../hooks/usePermissions';
-import { supabase } from '../lib/supabase';
+import { supabase, toSnakeCase } from '../lib/supabase';
 import { sendProxyAlert } from '../services/telegram';
 import { sendZaloProxyAlert } from '../services/zalo';
 
@@ -29,6 +29,8 @@ const ASSET_TYPES: { id: AssetType; label: string; icon: React.ElementType; colo
   { id: 'font', label: 'Font chữ', icon: Type, color: 'text-indigo-600 bg-indigo-50' },
   { id: 'footage', label: 'Footage quay sẵn', icon: Film, color: 'text-red-600 bg-red-50' },
   { id: 'license', label: 'License / Bản quyền', icon: Calendar, color: 'text-amber-600 bg-amber-50' },
+  { id: 'ai_account', label: 'Tài khoản AI (ChatGPT, Gemini, Grok...)', icon: BrainCircuit, color: 'text-[#00FFFF] bg-[#00FFFF]/10 border border-[#00FFFF]/20' },
+  { id: 'content_account', label: 'Tài khoản Content (Canva, CapCut...)', icon: Sparkles, color: 'text-[#FF0000] bg-[#FF0000]/10 border border-[#FF0000]/20' },
 ];
 
 export function AssetManager({ assets, setAssets, proxies, setProxies, topics, geminiApiKey, managedEmails, setManagedEmails, staffList, settings }: AssetManagerProps) {
@@ -60,7 +62,7 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
   // Asset Modal State
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
-  const [assetForm, setAssetForm] = useState<Omit<Asset, 'id'>>({ name: '', type: 'drive', url: '', notes: '', expirationDate: '' });
+  const [assetForm, setAssetForm] = useState<Omit<Asset, 'id'>>({ name: '', type: 'drive', url: '', notes: '', expirationDate: '', username: '', password: '' });
 
   // Proxy Modal State
   const [isProxyModalOpen, setIsProxyModalOpen] = useState(false);
@@ -77,12 +79,31 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
     showToast('Đã copy vào clipboard', 'success');
   };
 
-  const handleAssetSubmit = (e: React.FormEvent) => {
+  const handleAssetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const finalAsset = {
+      ...assetForm,
+      username: assetForm.username || null,
+      password: assetForm.password || null,
+      expirationDate: assetForm.expirationDate || null
+    };
+
     if (editingAsset) {
-      setAssets(assets.map(a => a.id === editingAsset.id ? { ...a, ...assetForm } : a));
+      const updatedAsset = { ...editingAsset, ...finalAsset };
+      setAssets(assets.map(a => a.id === editingAsset.id ? updatedAsset : a));
+      
+      const dbPayload = toSnakeCase(updatedAsset);
+      const { error } = await supabase.from('assets').upsert(dbPayload, { onConflict: 'id' });
+      if (error) showToast(`Lỗi lưu DB: ${error.message}`, 'error');
+      else showToast('Cập nhật tài nguyên thành công', 'success');
     } else {
-      setAssets([...assets, { id: crypto.randomUUID(), ...assetForm }]);
+      const newAsset = { id: crypto.randomUUID(), ...finalAsset };
+      setAssets([...assets, newAsset]);
+      
+      const dbPayload = toSnakeCase(newAsset);
+      const { error } = await supabase.from('assets').upsert(dbPayload, { onConflict: 'id' });
+      if (error) showToast(`Lỗi thêm vào DB: ${error.message}`, 'error');
+      else showToast('Thêm tài nguyên thành công', 'success');
     }
     setIsAssetModalOpen(false);
   };
@@ -107,11 +128,22 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
     setIsEmailModalOpen(false);
   };
 
-  const handleBulkDeleteAssets = () => {
+  const handleBulkDeleteAssets = async () => {
     if (confirm(`Bạn có chắc muốn xóa ${selectedAssetIds.length} tài nguyên?`)) {
       setAssets(prev => prev.filter(a => !selectedAssetIds.includes(a.id)));
-      showToast(`Đã xóa ${selectedAssetIds.length} tài nguyên`, 'info');
+      const { error } = await supabase.from('assets').delete().in('id', selectedAssetIds);
+      if (error) showToast(`Lỗi xóa: ${error.message}`, 'error');
+      else showToast(`Đã xóa ${selectedAssetIds.length} tài nguyên`, 'info');
       setSelectedAssetIds([]);
+    }
+  };
+
+  const handleSingleDeleteAsset = async (id: string) => {
+    if (confirm('Bạn có chắc chắn muốn xóa tài nguyên này?')) {
+      setAssets(prev => prev.filter(a => a.id !== id));
+      const { error } = await supabase.from('assets').delete().eq('id', id);
+      if (error) showToast(`Lỗi xóa: ${error.message}`, 'error');
+      else showToast('Xóa tài nguyên thành công', 'info');
     }
   };
 
@@ -273,7 +305,7 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                   </button>
                 )}
                 <button 
-                  onClick={() => { setEditingAsset(null); setAssetForm({ name: '', type: 'drive', url: '', notes: '', expirationDate: '' }); setIsAssetModalOpen(true); }} 
+                  onClick={() => { setEditingAsset(null); setAssetForm({ name: '', type: 'drive', url: '', notes: '', expirationDate: '', username: '', password: '' }); setIsAssetModalOpen(true); }} 
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition-colors"
                 >
                   <Plus size={16} className="mr-2" /> Thêm tài nguyên
@@ -286,6 +318,7 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
               const typeInfo = ASSET_TYPES.find(t => t.id === asset.type);
               const Icon = typeInfo?.icon || HardDrive;
               const licenseStatus = checkLicenseStatus(asset.expirationDate);
+              const isAccountType = asset.type === 'ai_account' || asset.type === 'content_account';
 
               return (
                 <div key={asset.id} className={`bg-white p-5 rounded-xl shadow-sm border flex flex-col hover:shadow-md transition-shadow ${licenseStatus?.label === 'Hết hạn' ? 'border-red-300' : 'border-gray-100'} ${selectedAssetIds.includes(asset.id) ? 'ring-2 ring-blue-400 bg-blue-50/10' : ''}`}>
@@ -308,8 +341,8 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                     </div>
                     {hasPermission('assets_edit') && (
                       <div className="flex space-x-1">
-                        <button onClick={() => { setEditingAsset(asset); setAssetForm(asset); setIsAssetModalOpen(true); }} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={16} /></button>
-                        <button onClick={() => setAssets(prev => prev.filter(a => a.id !== asset.id))} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
+                        <button onClick={() => { setEditingAsset(asset); setAssetForm({ ...asset, username: asset.username || '', password: asset.password || '' }); setIsAssetModalOpen(true); }} className="p-1 text-gray-400 hover:text-blue-600"><Edit2 size={16} /></button>
+                        <button onClick={() => handleSingleDeleteAsset(asset.id)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={16} /></button>
                       </div>
                     )}
                   </div>
@@ -317,6 +350,34 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                   {licenseStatus && (
                     <div className={`mb-3 px-2 py-1 rounded text-[10px] font-bold border flex items-center w-fit ${licenseStatus.color}`}>
                       <AlertCircle size={10} className="mr-1" /> {licenseStatus.label}
+                    </div>
+                  )}
+
+                  {isAccountType && (asset.username || asset.password) && (
+                    <div className="mb-3 p-3 bg-slate-900 border border-slate-800 rounded-lg space-y-2 text-gray-300 font-medium">
+                      {asset.username && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-400">Username/Email:</span>
+                          <div className="flex items-center space-x-1.5 font-mono">
+                            <span className="text-[#00FFFF] font-semibold truncate max-w-[140px]" title={asset.username}>{asset.username}</span>
+                            <button type="button" onClick={() => handleCopy(asset.username || '')} className="text-gray-400 hover:text-[#00FFFF]" title="Copy Email"><Copy size={12} /></button>
+                          </div>
+                        </div>
+                      )}
+                      {asset.password && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-gray-400">Mật khẩu:</span>
+                          <div className="flex items-center space-x-1.5 font-mono">
+                            <span className="text-gray-300 bg-slate-800 px-1 py-0.5 rounded text-[11px] font-bold">
+                              {showPasswords[asset.id] ? asset.password : '••••••••'}
+                            </span>
+                            <button type="button" onClick={() => handleCopy(asset.password || '')} className="text-gray-400 hover:text-[#00FFFF]" title="Copy Password"><Copy size={12} /></button>
+                            <button type="button" onClick={() => togglePasswordVisibility(asset.id)} className="text-gray-400 hover:text-[#FF0000]" title={showPasswords[asset.id] ? "Ẩn" : "Hiện"}>
+                              {showPasswords[asset.id] ? <EyeOff size={12} /> : <Eye size={12} />}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -601,6 +662,30 @@ export function AssetManager({ assets, setAssets, proxies, setProxies, topics, g
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Loại</label><select value={assetForm.type} onChange={e => setAssetForm({ ...assetForm, type: e.target.value as AssetType })} className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white">{ASSET_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}</select></div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Ngày hết hạn (Nếu có)</label><input type="date" value={assetForm.expirationDate} onChange={e => setAssetForm({ ...assetForm, expirationDate: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2" /></div>
               </div>
+              {(assetForm.type === 'ai_account' || assetForm.type === 'content_account') && (
+                <div className="grid grid-cols-2 gap-4 border-t border-gray-100 pt-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tài khoản (Email / User)</label>
+                    <input 
+                      type="text" 
+                      value={assetForm.username || ''} 
+                      onChange={e => setAssetForm({ ...assetForm, username: e.target.value })} 
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                      placeholder="Username hoặc Email"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
+                    <input 
+                      type="text" 
+                      value={assetForm.password || ''} 
+                      onChange={e => setAssetForm({ ...assetForm, password: e.target.value })} 
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" 
+                      placeholder="Password"
+                    />
+                  </div>
+                </div>
+              )}
               <div><label className="block text-sm font-medium text-gray-700 mb-1">URL / Link Drive</label><input type="url" required value={assetForm.url} onChange={e => setAssetForm({ ...assetForm, url: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2" /></div>
               <div><label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú</label><textarea value={assetForm.notes} onChange={e => setAssetForm({ ...assetForm, notes: e.target.value })} className="w-full border border-gray-300 rounded-lg px-3 py-2" rows={2} /></div>
               <div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={() => setIsAssetModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-lg">Hủy</button><button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Lưu</button></div>
