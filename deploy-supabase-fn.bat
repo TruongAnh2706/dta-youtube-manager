@@ -1,54 +1,52 @@
 @echo off
+rem Set code page to UTF-8
 chcp 65001 > nul
+
 echo =========================================================================
-echo  🛠️ DTA STUDIO - CÔNG CỤ TỰ ĐỘNG DEPLOY SUPABASE EDGE FUNCTION
+echo  DTA STUDIO - CONG CU TU DONG DEPLOY SUPABASE EDGE FUNCTION
 echo =========================================================================
 echo.
-echo Đang kiểm tra cấu hình dự án...
+echo Dang kiem tra cau hinh du an...
+echo.
 
 set "PROJECT_REF=rjtjmxggtklafaprlmqb"
+set "CLI_PATH=%~dp0scratch\bin\supabase.exe"
 
-echo Ký hiệu dự án Supabase (Project Ref): %PROJECT_REF%
+echo Ky hieu du an Supabase (Project Ref): %PROJECT_REF%
+echo Duong dan CLI: %CLI_PATH%
 echo.
 
-:: Bước 1: Kiểm tra xem npm có hoạt động cục bộ không
-echo [1/3] Đang kiểm tra Supabase CLI trong node_modules...
-if exist "node_modules\.bin\supabase.cmd" (
-    echo CLI đã được cài đặt cục bộ.
-    goto deploy
+rem Buoc 1: Kiem tra file supabase.exe co ton tai khong
+echo [1/3] Kiem tra Supabase CLI...
+if exist "%CLI_PATH%" (
+    echo CLI da san sang tai %CLI_PATH%
+    goto login
 )
 
-echo CLI chưa được cài đặt. Đang tiến hành cài đặt Supabase CLI cục bộ bằng npm...
-call npm install supabase --save-dev
+echo [LOI] Khong tim thay file %CLI_PATH%
+echo Vui long chac chan ban da tai tron bo source code ve.
+pause
+exit /b 1
+
+:login
+echo.
+echo [2/3] Dang chuan bi dang nhap Supabase Cloud...
+echo LUU Y: Neu day la lan dau tien deploy, trinh duyet se mo ra trang web Supabase.
+echo Hay nhan Enter de bat dau qua trinh dang nhap. Sau do trinh duyet se mo ra,
+echo ban hay nhap Access Token hoac nhan "Authorize" de cap quyen.
+echo.
+pause
+
+"%CLI_PATH%" login
+
+echo.
+echo [3/3] Dang tien hanh deploy Edge Function 'check-monetization'...
+"%CLI_PATH%" functions deploy check-monetization --project-ref %PROJECT_REF%
 
 if %errorlevel% neq 0 (
     echo.
-    echo ❌ [LỖI] Không thể cài đặt Supabase CLI qua npm.
-    echo Vui lòng đảm bảo máy tính của bạn đã cài đặt Node.js và npm.
-    echo Bạn có thể tự chạy lệnh sau trong cmd để cài đặt thủ công:
-    echo    npm install -g supabase
-    echo.
-    pause
-    exit /b %errorlevel%
-)
-
-:deploy
-echo.
-echo [2/3] Đang chuẩn bị deploy Edge Function lên Supabase Cloud...
-echo ⚠️  LƯU Ý: Nếu đây là lần đầu tiên deploy, trình duyệt sẽ mở ra trang web Supabase.
-echo Hãy nhấn "Authorize" để cấp quyền đăng nhập cho CLI, sau đó quay lại cửa sổ này.
-echo.
-
-call npx supabase login
-
-echo.
-echo [3/3] Đang tiến hành deploy Edge Function 'check-monetization'...
-call npx supabase functions deploy check-monetization --project-ref %PROJECT_REF%
-
-if %errorlevel% neq 0 (
-    echo.
-    echo ❌ [LỖI] Deploy Edge Function thất bại.
-    echo Vui lòng kiểm tra lại kết nối mạng hoặc phiên đăng nhập Supabase.
+    echo [LOI] Deploy Edge Function that bai.
+    echo Vui long kiem tra lai ket noi mang hoac phien dang nhap Supabase.
     echo.
     pause
     exit /b %errorlevel%
@@ -56,11 +54,12 @@ if %errorlevel% neq 0 (
 
 echo.
 echo =========================================================================
-echo  🎉 [THÀNH CÔNG] ĐÃ DEPLOY EDGE FUNCTION CHECK-MONETIZATION LÊN CLOUD!
+echo  [THANH CONG] DA DEPLOY EDGE FUNCTION CHECK-MONETIZATION LEN CLOUD!
 echo =========================================================================
-echo Bây giờ tính năng check kiếm tiền sẽ chạy trực tiếp trên Cloud 24/7.
-echo Bạn có thể tắt Server Node.js local (cổng 3001) và sử dụng ngay trên Web App.
+echo Bay gio tinh nang check kiem tien se chay truc tiep tren Cloud 24/7.
+echo Ban co the tat Server Node.js local (cong 3001) va su dung ngay tren Web App.
 echo.
-echo Cảm ơn bạn đã sử dụng dịch vụ của DTA Studio!
+echo Phat trien boi DTA Studio - Chu quan: Duc Truong
+echo Lien he Zalo: 0962.775.506 | Web: https://dta-studio.vercel.app/
 echo =========================================================================
 pause
