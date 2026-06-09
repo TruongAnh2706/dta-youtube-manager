@@ -4,6 +4,14 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.6] - 2026-06-09
+### 🚀 Tính năng mới (Features)
+- **Hỗ trợ Tài khoản AI & Content:** Bổ sung loại tài sản mới (ChatGPT, ElevenLabs, Grok, Canva,...) trực tiếp vào Kho tài nguyên với giao diện màu Neon Blue và Neon Red đặc trưng của DTA Studio. Hỗ trợ nút copy nhanh và ẩn/hiện mật khẩu bảo mật.
+- **Đồng bộ trực tiếp Supabase:** Chuyển đổi cơ chế lưu của tab Quản lý Email (tạo/sửa email lẻ, đổi trạng thái/gán hàng loạt, dán import) và Kho tài nguyên để lưu trực tiếp lên cơ sở dữ liệu Supabase, khắc phục triệt để lỗi mất dữ liệu khi F5 hoặc chuyển trang nhanh.
+
+### 📄 Database Migration
+- Tạo tệp `migration-add-ai-content-accounts.sql` bổ sung cột `username`, `password` và cập nhật ràng buộc kiểu tài sản (`type CHECK constraint`) trong bảng `assets`.
+
 ## [1.2.5] - 2026-05-24
 ### 🚀 Tính năng mới (Features)
 - **Dịch Lỗi Kết nối Hệ thống (Failed to Fetch):** Nâng cấp bộ bắt lỗi trong chức năng quét trạng thái kiếm tiền của kênh đối thủ (`SourceChannels`). Tự động phát hiện lỗi ngắt kết nối mạng/chưa bật backend `Failed to fetch` và hiển thị thông báo tiếng Việt trực quan, hướng dẫn cụ thể cách khởi động Server Node.js (cổng 3001) để quản trị viên dễ dàng tự xử lý.
