@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { FinancialRecord, Channel, VideoTask, Staff, Transaction, FinancialAccount, TransactionCategory, TransactionType } from '../types';
+import { FinancialRecord, Channel, VideoTask, Staff, Transaction, FinancialAccount, TransactionCategory, TransactionType, SystemSettings } from '../types';
 import {
   Plus, Edit2, Trash2, X, DollarSign, TrendingUp, TrendingDown,
   PieChart as PieChartIcon, BarChart as BarChartIcon, Calculator,
