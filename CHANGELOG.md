@@ -4,6 +4,10 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.11] - 10/06/2026
+### 🚀 Tính năng mới & Vá lỗi (Features & Fixes)
+- **Tối ưu hóa gọi API Edge Function bằng Fetch:** Chuyển đổi cơ chế gọi Supabase Edge Function từ SDK Client (`supabase.functions.invoke`) sang sử dụng `fetch` chuẩn. Cải tiến này giúp đọc trực tiếp và hiển thị đầy đủ thông báo lỗi JSON gốc trả về từ Deno Server (chẳng hạn như cảnh báo bị YouTube chặn cào/Rate Limit) thay vì bị che đậy bởi các mã lỗi wrapper generic của thư viện.
+
 ## [1.2.10] - 10/06/2026
 ### 🚀 Tính năng mới & Vá lỗi (Features & Fixes)
 - **Hiển thị lỗi Cloud Edge Function chi tiết:** Cập nhật logic xử lý lỗi ở Frontend (`SourceChannels.tsx` và `MonetizationReport.tsx`). Thay vì âm thầm bỏ qua lỗi Cloud và chỉ hiển thị lỗi dự phòng (localhost:3001) chung chung, hệ thống hiện tại sẽ hiển thị Toast thông báo chi tiết lỗi thực tế nhận được từ Cloud Edge Function. Điều này giúp dễ dàng xác định và khắc phục các vấn đề liên quan đến mạng hay phân quyền.

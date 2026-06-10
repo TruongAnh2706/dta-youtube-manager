@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase';
 import { Channel, ChannelMetric, Staff, SystemSettings } from '../types';
 import { useToast } from '../hooks/useToast';
 import { Calendar, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Edit3, X, Eye, Lock, ChevronRight, ChevronDown, ChevronUp, Users, User, Percent, BarChart3, Sparkles, RefreshCw, Activity } from 'lucide-react';
@@ -222,19 +222,26 @@ export function MonetizationReport({ channels, setChannels, metrics, setMetrics,
 
       // 2. Thử gọi qua Supabase Edge Function (Cloud)
       try {
-        const { data: edgeData, error: edgeError } = await supabase.functions.invoke('check-monetization', {
-          body: {
+        const response = await fetch(`${supabaseUrl}/functions/v1/check-monetization`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseAnonKey || ''
+          },
+          body: JSON.stringify({
             channelUrl: channel.url || `https://www.youtube.com/channel/${channel.id}`,
             videoId: null
-          }
+          })
         });
 
-        if (!edgeError && edgeData && edgeData.success) {
-          isMonetized = edgeData.isMonetized;
+        const result = await response.json().catch(() => ({}));
+
+        if (response.ok && result.success) {
+          isMonetized = result.isMonetized;
           callSuccess = true;
           console.log('[MONETIZATION] Quét thành công qua Supabase Edge Function Cloud!');
         } else {
-          edgeErrorDetail = edgeError ? edgeError.message : (edgeData?.error || 'Lỗi không xác định từ Cloud Edge Function');
+          edgeErrorDetail = result.error || `Lỗi HTTP ${response.status}`;
           console.warn('[MONETIZATION] Supabase Edge Function trả về lỗi:', edgeErrorDetail);
         }
       } catch (edgeErr: any) {

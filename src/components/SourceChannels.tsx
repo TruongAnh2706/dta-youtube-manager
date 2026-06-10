@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { SourceChannel, Topic, Channel, Staff, VideoTask } from '../types';
 import { Plus, Edit2, Trash2, X, ExternalLink, Star, RefreshCw, ChevronDown, ChevronUp, Youtube, Calendar, Eye, Video, Clock, Upload, FileDown, AlertCircle, Sparkles, Search, Download, Users, BrainCircuit, ClipboardList } from 'lucide-react';
 import { GoogleGenAI } from '@google/genai';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase';
 import * as XLSX from 'xlsx';
 import { fetchYoutubeChannelInfo, sleep, normalizeYoutubeUrl } from '../services/youtube';
 import { analyzeChannelTopic } from '../services/aiService';
@@ -65,19 +65,26 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
 
       // 2. Thử gọi qua Supabase Edge Function (Cloud)
       try {
-        const { data: edgeData, error: edgeError } = await supabase.functions.invoke('check-monetization', {
-          body: {
+        const response = await fetch(`${supabaseUrl}/functions/v1/check-monetization`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseAnonKey || ''
+          },
+          body: JSON.stringify({
             channelUrl: channel.url,
             videoId: videoId
-          }
+          })
         });
 
-        if (!edgeError && edgeData && edgeData.success) {
-          isMonetized = edgeData.isMonetized;
+        const result = await response.json().catch(() => ({}));
+
+        if (response.ok && result.success) {
+          isMonetized = result.isMonetized;
           callSuccess = true;
           console.log('[MONETIZATION] Quét thành công qua Supabase Edge Function Cloud!');
         } else {
-          edgeErrorDetail = edgeError ? edgeError.message : (edgeData?.error || 'Lỗi không xác định từ Cloud Edge Function');
+          edgeErrorDetail = result.error || `Lỗi HTTP ${response.status}`;
           console.warn('[MONETIZATION] Supabase Edge Function trả về lỗi:', edgeErrorDetail);
         }
       } catch (edgeErr: any) {
