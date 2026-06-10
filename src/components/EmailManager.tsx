@@ -1085,19 +1085,51 @@ export function EmailManager({ emails, setEmails, staffList, topics, currentUser
             </div>
             
             <div className="p-6 space-y-6">
-              <div className="flex items-center justify-between">
+              {/* Mã Kênh / Mã Mail High-tech siêu nổi bật */}
+              <div className="bg-slate-950 text-white p-4 rounded-xl border border-cyan-500/30 flex items-center justify-between shadow-lg relative overflow-hidden group">
+                <div className="absolute -right-6 -top-6 w-24 h-24 bg-cyan-500/10 rounded-full blur-xl group-hover:bg-cyan-500/20 transition-all duration-500"></div>
+                
                 <div>
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Tài khoản Email</label>
-                  <div className="font-semibold text-gray-900 text-lg flex items-center gap-2">
-                    {privacyMode ? '••••••••' : viewingEmail.email}
-                    {!privacyMode && <button onClick={() => handleCopy(viewingEmail.email, 'Email')} className="text-gray-400 hover:text-blue-500"><Copy size={14} /></button>}
+                  <label className="text-[10px] font-extrabold text-cyan-400 uppercase tracking-widest block mb-1">
+                    MÃ KÊNH / MÃ MAIL
+                  </label>
+                  <div className="text-3xl font-black tracking-wider text-[#00FFFF] drop-shadow-[0_0_8px_rgba(0,255,255,0.4)] flex items-center gap-3">
+                    {viewingEmail.channelCode || '-'}
+                    {viewingEmail.channelCode && (
+                      <button 
+                        onClick={() => handleCopy(viewingEmail.channelCode, 'Mã Kênh')} 
+                        className="p-1 hover:bg-cyan-500/20 active:scale-95 rounded-md transition-all text-cyan-400 hover:text-white"
+                        title="Sao chép"
+                      >
+                        <Copy size={16} />
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Trạng thái</label>
+                
+                <div className="text-right flex flex-col items-end gap-1.5 z-10">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block">
+                    Trạng thái
+                  </label>
                   {getStatusBadge(viewingEmail.status)}
                 </div>
               </div>
+
+              {/* Tài khoản Email */}
+              <div className="bg-gray-50 border border-gray-200/60 p-4 rounded-xl flex items-center justify-between">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block">Tài khoản Email</label>
+                  <div className="font-bold text-gray-800 text-base flex items-center gap-2 select-all">
+                    {privacyMode ? '••••••••' : viewingEmail.email}
+                    {!privacyMode && (
+                      <button onClick={() => handleCopy(viewingEmail.email, 'Email')} className="text-gray-400 hover:text-blue-500 transition-colors">
+                        <Copy size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100/50">

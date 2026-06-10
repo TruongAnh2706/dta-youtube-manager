@@ -4,6 +4,11 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.8] - 10/06/2026
+### 🚀 Tính năng mới (Features)
+- **Hiển thị Mã Kênh / Mã Mail High-tech nổi bật:** Thêm khối hiển thị "Mã Kênh / Mã Mail" (channelCode) to rõ ràng với thiết kế High-tech (nền tối, chữ màu Neon Blue `#00FFFF` phát sáng) ở vị trí cao nhất của Modal Chi tiết tài khoản. Hỗ trợ nút sao chép nhanh, tăng tốc độ làm việc của quản trị viên và nhân viên.
+- **Tối ưu hóa file script deploy.bat:** Sửa đổi file deploy batch script để hoạt động độc lập và ổn định trên Windows.
+
 ## [1.2.7] - 2026-06-09
 ### 🚀 Tính năng mới (Features)
 - **Kiểm tra Kiếm tiền qua Cloud (Supabase Edge Function):** Di chuyển logic check BKT YouTube từ server local Express sang chạy trực tuyến 24/7 trên Cloud của Supabase qua Edge Function `check-monetization`. Giúp admin và nhân viên mở Web App ra là có thể quét BKT ngay lập tức mà không cần bật server local ở máy cá nhân.
