@@ -4,6 +4,10 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.10] - 10/06/2026
+### 🚀 Tính năng mới & Vá lỗi (Features & Fixes)
+- **Hiển thị lỗi Cloud Edge Function chi tiết:** Cập nhật logic xử lý lỗi ở Frontend (`SourceChannels.tsx` và `MonetizationReport.tsx`). Thay vì âm thầm bỏ qua lỗi Cloud và chỉ hiển thị lỗi dự phòng (localhost:3001) chung chung, hệ thống hiện tại sẽ hiển thị Toast thông báo chi tiết lỗi thực tế nhận được từ Cloud Edge Function. Điều này giúp dễ dàng xác định và khắc phục các vấn đề liên quan đến mạng hay phân quyền.
+
 ## [1.2.9] - 10/06/2026
 ### 🚀 Tính năng mới & Vá lỗi (Features & Fixes)
 - **Cấu hình Edge Function không cần xác thực JWT:** Thêm cờ `--no-verify-jwt` vào câu lệnh deploy trong file `deploy-supabase-fn.bat`. Cải tiến này giúp loại bỏ hoàn toàn lỗi xác thực `401 Unauthorized` từ Gateway của Supabase khi người dùng gọi API check BKT công cộng, giúp Web App hoạt động độc lập không phụ thuộc vào trạng thái session của tài khoản đang đăng nhập.

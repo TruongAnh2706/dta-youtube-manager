@@ -61,6 +61,7 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
 
       let isMonetized = null;
       let callSuccess = false;
+      let edgeErrorDetail = null;
 
       // 2. Thử gọi qua Supabase Edge Function (Cloud)
       try {
@@ -75,15 +76,20 @@ export function SourceChannels({ sourceChannels, setSourceChannels, topics, setT
           isMonetized = edgeData.isMonetized;
           callSuccess = true;
           console.log('[MONETIZATION] Quét thành công qua Supabase Edge Function Cloud!');
-        } else if (edgeError) {
-          console.warn('[MONETIZATION] Supabase Edge Function trả về lỗi:', edgeError);
+        } else {
+          edgeErrorDetail = edgeError ? edgeError.message : (edgeData?.error || 'Lỗi không xác định từ Cloud Edge Function');
+          console.warn('[MONETIZATION] Supabase Edge Function trả về lỗi:', edgeErrorDetail);
         }
-      } catch (edgeErr) {
+      } catch (edgeErr: any) {
+        edgeErrorDetail = edgeErr.message || 'Không thể kết nối Cloud Edge Function';
         console.warn('[MONETIZATION] Không thể kết nối Cloud Edge Function, tự động chuyển về Express local...', edgeErr);
       }
 
       // Fallback về Backend local Express nếu gọi Edge Function thất bại
       if (!callSuccess) {
+        console.log(`[MONETIZATION] Bắt đầu fallback về Express local do Cloud lỗi: ${edgeErrorDetail}`);
+        showToast(`Cloud Edge Function gặp lỗi (${edgeErrorDetail}). Đang thử kết nối server local...`, 'info');
+
         const response = await fetch(`${API_BASE_URL}/api/youtube/check-monetization`, {
           method: 'POST',
           headers: {
