@@ -41,7 +41,7 @@ pause
 
 echo.
 echo [3/3] Dang tien hanh deploy Edge Function 'check-monetization'...
-"%CLI_PATH%" functions deploy check-monetization --project-ref %PROJECT_REF%
+"%CLI_PATH%" functions deploy check-monetization --project-ref %PROJECT_REF% --no-verify-jwt
 
 if %errorlevel% neq 0 (
     echo.

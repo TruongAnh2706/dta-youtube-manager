@@ -4,6 +4,10 @@ Tất cả các thay đổi đáng chú ý đối với dự án DTA YouTube Man
 
 Dự án tuân theo [Semantic Versioning](https://semver.org/).
 
+## [1.2.9] - 10/06/2026
+### 🚀 Tính năng mới & Vá lỗi (Features & Fixes)
+- **Cấu hình Edge Function không cần xác thực JWT:** Thêm cờ `--no-verify-jwt` vào câu lệnh deploy trong file `deploy-supabase-fn.bat`. Cải tiến này giúp loại bỏ hoàn toàn lỗi xác thực `401 Unauthorized` từ Gateway của Supabase khi người dùng gọi API check BKT công cộng, giúp Web App hoạt động độc lập không phụ thuộc vào trạng thái session của tài khoản đang đăng nhập.
+
 ## [1.2.8] - 10/06/2026
 ### 🚀 Tính năng mới (Features)
 - **Hiển thị Mã Kênh / Mã Mail High-tech nổi bật:** Thêm khối hiển thị "Mã Kênh / Mã Mail" (channelCode) to rõ ràng với thiết kế High-tech (nền tối, chữ màu Neon Blue `#00FFFF` phát sáng) ở vị trí cao nhất của Modal Chi tiết tài khoản. Hỗ trợ nút sao chép nhanh, tăng tốc độ làm việc của quản trị viên và nhân viên.
